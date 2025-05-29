@@ -6,3 +6,8 @@ python-dotenv
 langchain
 chromadb
 supabase
+langchain-community
+langchain-openai
+openai
+tiktoken
+python-multipart

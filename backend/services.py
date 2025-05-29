@@ -2,8 +2,8 @@ import os
 import logging
 from functools import wraps
 from fastapi import Request, HTTPException
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import Chroma
 from langchain.docstore.document import Document
 from supabase import create_client, Client
 from dotenv import load_dotenv
