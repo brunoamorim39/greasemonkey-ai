@@ -2,7 +2,6 @@ workflows:
   flutter-workflow:
     name: GreaseMonkey AI Flutter Build
     max_build_duration: 60
-    working_directory: frontend
 
     triggering:
       events:
@@ -19,6 +18,12 @@ workflows:
         - pattern: 'v*'
           include: true
 
+    when:
+      changeset:
+        includes:
+          - 'frontend/**'
+          - 'codemagic.yaml'
+
     environment:
       flutter: stable
       xcode: latest
@@ -29,32 +34,39 @@ workflows:
     scripts:
       - name: Set up local.properties
         script: |
-          echo "flutter.sdk=$HOME/programs/flutter" > "$CM_BUILD_DIR/android/local.properties"
+          cd frontend
+          mkdir -p android
+          echo "flutter.sdk=$HOME/programs/flutter" > "android/local.properties"
 
       - name: Get Flutter packages
         script: |
+          cd frontend
           flutter packages pub get
 
       - name: Flutter analyze
         script: |
+          cd frontend
           flutter analyze
 
       - name: Flutter unit tests
         script: |
+          cd frontend
           flutter test --coverage
 
       - name: Build APK with Flutter
         script: |
+          cd frontend
           flutter build apk --release
 
       - name: Build iOS (if building for iOS)
         script: |
+          cd frontend
           flutter build ios --release --no-codesign
 
     artifacts:
-      - build/**/outputs/**/*.apk
-      - build/**/outputs/**/mapping.txt
-      - build/ios/iphoneos/Runner.app
+      - frontend/build/**/outputs/**/*.apk
+      - frontend/build/**/outputs/**/mapping.txt
+      - frontend/build/ios/iphoneos/Runner.app
       - flutter_drive.log
 
     publishing:
