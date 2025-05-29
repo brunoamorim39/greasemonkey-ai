@@ -1,0 +1,88 @@
+# Miscellaneous
+*.class
+*.lock
+*.log
+*.pyc
+*.swo
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.idea
+.tmPreferences.plist
+.vs/
+.vscode/
+app.iml
+build/
+coverage/
+nbproject/
+test/coverage/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+# pubspec.lock # Typically committed, but can be ignored if preferred
+
+# Android related
+**/android/**/gradle-wrapper.jar
+**/android/.gradle
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/app/src/main/assets/flutter_assets/
+*.apk
+*.aab
+*.jar
+
+# iOS/XCode related
+**/ios/**/*.pbxuser
+**/ios/**/*.mode1v3
+**/ios/**/*.mode2v3
+**/ios/**/*.xcworkspace
+**/ios/**/profile
+**/ios/.bundle
+**/ios/DerivedData/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.flx
+**/ios/Flutter/flutter_assets/
+**/ios/Pods/
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/ios/Runner.xcodeproj/project.xcworkspace/
+**/ios/Runner.xcodeproj/xcuserdata/
+**/ios/ServiceDefinitions.json
+*.hmap
+*.ipa
+*.symsymbols
+DerivedData/
+Flutter/ephemeral/
+Flutter/podhelper.rb
+Flutter/app.flx # Obsolete, but good to have
+ServiceDefinitions.json # Obsolete
+
+# Web related
+**/web/entrypoint.lock # If you use webdev
+**/web/build/ # Web build outputs
+
+# Desktop related (macOS, Linux, Windows)
+**/linux/flutter/generated_plugin_registrant.h
+**/linux/flutter/generated_plugins.cmake
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/windows/flutter/generated_plugin_registrant.h
+**/windows/flutter/generated_plugins.cmake
+
+# Picovoice specific (if you store them in a common location and don't want to commit)
+# assets/porcupine_params.pv
+# assets/greasemonkey.ppn
+# .env # If it contains sensitive keys like PICOVOICE_ACCESS_KEY
+
+# If you have a global .env at the root, you might want to ignore it there:
+# /.env

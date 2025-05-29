@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: greasemonkey-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: starter
+    healthCheckPath: /
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://greasemonkey-frontend.onrender.com
+
+  - type: web
+    name: greasemonkey-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    plan: starter
+    envVars:
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: greasemonkey-backend
+          property: host

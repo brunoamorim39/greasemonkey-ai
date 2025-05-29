@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as provider_pkg;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../state/app_state.dart';
@@ -37,7 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
+    final appState = provider_pkg.Provider.of<AppState>(context);
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
     return Scaffold(
@@ -87,7 +87,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               await supabase.auth.signOut();
               appState.setUserId('');
               if (context.mounted) {
-                Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/', (route) => false);
               }
             },
           ),

@@ -19,6 +19,7 @@ dependencies:
   cupertino_icons: ^1.0.6
   animations: ^2.0.11
   flutter_dotenv: ^5.1.0
+  sentry_flutter: ^7.14.0
 
 dev_dependencies:
   flutter_test:

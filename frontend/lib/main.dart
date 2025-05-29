@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'state/app_state.dart';
 import 'models/vehicle.dart';
 import 'screens/query_screen.dart';
+import 'screens/launch_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,36 +41,36 @@ class GreaseMonkeyApp extends StatelessWidget {
 }
 
 // --- Launch Screen ---
-class LaunchScreen extends StatelessWidget {
-  const LaunchScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    // TODO: Add animated loading icon and auto-login logic
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'GreaseMonkey AI',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 24),
-            const CircularProgressIndicator(),
-            const SizedBox(height: 24),
-            TextButton(
-              onPressed: () {
-                Navigator.pushReplacementNamed(context, '/garage');
-              },
-              child: const Text('Continue'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// class LaunchScreen extends StatelessWidget {
+//   const LaunchScreen({super.key});
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     // TODO: Add animated loading icon and auto-login logic
+//     return Scaffold(
+//       body: Center(
+//         child: Column(
+//           mainAxisAlignment: MainAxisAlignment.center,
+//           children: [
+//             const Text(
+//               'GreaseMonkey AI',
+//               style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+//             ),
+//             const SizedBox(height: 24),
+//             const CircularProgressIndicator(),
+//             const SizedBox(height: 24),
+//             TextButton(
+//               onPressed: () {
+//                 Navigator.pushReplacementNamed(context, '/garage');
+//               },
+//               child: const Text('Continue'),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+// }
 
 // --- Garage Dashboard ---
 class GarageDashboard extends StatelessWidget {
@@ -102,7 +103,8 @@ class GarageDashboard extends StatelessWidget {
           ),
           Expanded(
             child: appState.vehicles.isEmpty
-                ? const Center(child: Text('No vehicles yet. Add your first car!'))
+                ? const Center(
+                    child: Text('No vehicles yet. Add your first car!'))
                 : ListView.builder(
                     itemCount: appState.vehicles.length,
                     itemBuilder: (context, idx) {
@@ -110,8 +112,12 @@ class GarageDashboard extends StatelessWidget {
                       final isActive = v == appState.activeVehicle;
                       return ListTile(
                         title: Text(v.name),
-                        subtitle: Text(v.engine + (v.notes.isNotEmpty ? ' — ${v.notes}' : '')),
-                        leading: isActive ? const Icon(Icons.directions_car, color: Colors.orange) : const Icon(Icons.directions_car),
+                        subtitle: Text(v.engine +
+                            (v.notes.isNotEmpty ? ' — ${v.notes}' : '')),
+                        leading: isActive
+                            ? const Icon(Icons.directions_car,
+                                color: Colors.orange)
+                            : const Icon(Icons.directions_car),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -154,15 +160,18 @@ class GarageDashboard extends StatelessWidget {
               children: [
                 TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Car (e.g. 2008 Subaru WRX)'),
+                  decoration: const InputDecoration(
+                      labelText: 'Car (e.g. 2008 Subaru WRX)'),
                 ),
                 TextField(
                   controller: engineController,
-                  decoration: const InputDecoration(labelText: 'Engine (e.g. EJ255)'),
+                  decoration:
+                      const InputDecoration(labelText: 'Engine (e.g. EJ255)'),
                 ),
                 TextField(
                   controller: notesController,
-                  decoration: const InputDecoration(labelText: 'Notes (optional)'),
+                  decoration:
+                      const InputDecoration(labelText: 'Notes (optional)'),
                 ),
               ],
             ),
@@ -174,7 +183,8 @@ class GarageDashboard extends StatelessWidget {
             ),
             ElevatedButton(
               onPressed: () {
-                if (nameController.text.isNotEmpty && engineController.text.isNotEmpty) {
+                if (nameController.text.isNotEmpty &&
+                    engineController.text.isNotEmpty) {
                   Provider.of<AppState>(context, listen: false).addVehicle(
                     Vehicle(
                       name: nameController.text,

@@ -1,0 +1,14 @@
+.git
+.gitignore
+.dart_tool
+.idea
+.vscode
+build/
+linux/
+macos/
+windows/
+ios/
+android/
+test/
+*.iml
+*.lastUpdated

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as provider_pkg;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../state/app_state.dart';
 
@@ -25,8 +25,9 @@ class _LaunchScreenState extends State<LaunchScreen> {
   Future<void> _checkSession() async {
     final supabase = Supabase.instance.client;
     final session = supabase.auth.currentSession;
-    if (session != null && session.user != null) {
-      Provider.of<AppState>(context, listen: false).setUserId(session.user!.id);
+    if (session != null) {
+      provider_pkg.Provider.of<AppState>(context, listen: false)
+          .setUserId(session.user.id);
       Navigator.pushReplacementNamed(context, '/garage');
     } else {
       setState(() => _loading = false);
@@ -34,32 +35,46 @@ class _LaunchScreenState extends State<LaunchScreen> {
   }
 
   Future<void> _login() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     final supabase = Supabase.instance.client;
     final res = await supabase.auth.signInWithPassword(
       email: _emailController.text.trim(),
       password: _passwordController.text.trim(),
     );
     if (res.user != null) {
-      Provider.of<AppState>(context, listen: false).setUserId(res.user!.id);
+      provider_pkg.Provider.of<AppState>(context, listen: false)
+          .setUserId(res.user!.id);
       Navigator.pushReplacementNamed(context, '/garage');
     } else {
-      setState(() { _loading = false; _error = 'Login failed'; });
+      setState(() {
+        _loading = false;
+        _error = 'Login failed';
+      });
     }
   }
 
   Future<void> _signup() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     final supabase = Supabase.instance.client;
     final res = await supabase.auth.signUp(
       email: _emailController.text.trim(),
       password: _passwordController.text.trim(),
     );
     if (res.user != null) {
-      Provider.of<AppState>(context, listen: false).setUserId(res.user!.id);
+      provider_pkg.Provider.of<AppState>(context, listen: false)
+          .setUserId(res.user!.id);
       Navigator.pushReplacementNamed(context, '/garage');
     } else {
-      setState(() { _loading = false; _error = 'Signup failed'; });
+      setState(() {
+        _loading = false;
+        _error = 'Signup failed';
+      });
     }
   }
 
@@ -74,7 +89,9 @@ class _LaunchScreenState extends State<LaunchScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text('GreaseMonkey AI', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                    const Text('GreaseMonkey AI',
+                        style: TextStyle(
+                            fontSize: 32, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 24),
                     if (_error != null)
                       Text(_error!, style: const TextStyle(color: Colors.red)),

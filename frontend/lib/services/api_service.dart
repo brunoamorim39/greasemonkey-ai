@@ -16,7 +16,7 @@ class ApiService {
     if (response.statusCode == 200) {
       final respStr = await response.stream.bytesToString();
       final data = json.decode(respStr);
-      return data['text'] ?? data['transcription'] ?? data['text'] ?? null;
+      return data['text'] ?? data['transcription'] ?? null;
     } else {
       return null;
     }

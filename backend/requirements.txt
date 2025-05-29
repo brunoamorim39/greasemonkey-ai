@@ -11,3 +11,5 @@ langchain-openai
 openai
 tiktoken
 python-multipart
+pypdf
+sentry-sdk[fastapi]

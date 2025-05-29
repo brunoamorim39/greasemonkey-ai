@@ -7,8 +7,8 @@ import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../services/wakeword_service.dart';
 import '../state/app_state.dart';
-import 'screens/query_history_screen.dart';
-import 'screens/settings_screen.dart';
+import 'query_history_screen.dart';
+import 'settings_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class QueryScreen extends StatefulWidget {
@@ -79,11 +79,17 @@ class _QueryScreenState extends State<QueryScreen> {
     await _recorder!.stopRecorder();
     setState(() => _isRecording = false);
     if (_audioPath != null) {
-      setState(() { _isLoading = true; _errorMsg = null; });
+      setState(() {
+        _isLoading = true;
+        _errorMsg = null;
+      });
       final audioFile = File(_audioPath!);
       final text = await ApiService.transcribeAudio(audioFile);
       if (text == null || text.isEmpty) {
-        setState(() { _isLoading = false; _errorMsg = 'Could not transcribe audio.'; });
+        setState(() {
+          _isLoading = false;
+          _errorMsg = 'Could not transcribe audio.';
+        });
         _showError('Could not transcribe audio.');
         return;
       }
@@ -95,7 +101,10 @@ class _QueryScreenState extends State<QueryScreen> {
         notes: vehicle?.notes,
       );
       if (answer == null) {
-        setState(() { _isLoading = false; _errorMsg = 'Backend error.'; });
+        setState(() {
+          _isLoading = false;
+          _errorMsg = 'Backend error.';
+        });
         _showError('Backend error.');
         return;
       }
@@ -103,7 +112,8 @@ class _QueryScreenState extends State<QueryScreen> {
       if (vehicle == null) {
         await appState.addQueryToHistory({
           'question': text,
-          'answer': 'Before I answer, which car is this for? (Please set an active vehicle in your garage.)',
+          'answer':
+              'Before I answer, which car is this for? (Please set an active vehicle in your garage.)',
           'audio_url': '',
         });
       }
@@ -112,7 +122,9 @@ class _QueryScreenState extends State<QueryScreen> {
         'answer': answer['answer'] ?? 'No answer',
         'audio_url': audioUrl,
       });
-      setState(() { _isLoading = false; });
+      setState(() {
+        _isLoading = false;
+      });
       if (audioUrl.isNotEmpty && vehicle != null && _autoPlay) {
         await _playTTS(audioUrl);
       }
@@ -169,10 +181,13 @@ class _QueryScreenState extends State<QueryScreen> {
         return ListView(
           shrinkWrap: true,
           children: [
-            const ListTile(title: Text('Select Active Vehicle', style: TextStyle(fontWeight: FontWeight.bold))),
+            const ListTile(
+                title: Text('Select Active Vehicle',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
             ...appState.vehicles.map((v) => ListTile(
                   title: Text(v.name),
-                  subtitle: Text(v.engine + (v.notes.isNotEmpty ? ' — ${v.notes}' : '')),
+                  subtitle: Text(
+                      v.engine + (v.notes.isNotEmpty ? ' — ${v.notes}' : '')),
                   trailing: appState.activeVehicle == v
                       ? const Icon(Icons.check, color: Colors.orange)
                       : null,
@@ -217,8 +232,10 @@ class _QueryScreenState extends State<QueryScreen> {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: 'switch_vehicle', child: Text('Switch Vehicle')),
-              const PopupMenuItem(value: 'history', child: Text('Query History')),
+              const PopupMenuItem(
+                  value: 'switch_vehicle', child: Text('Switch Vehicle')),
+              const PopupMenuItem(
+                  value: 'history', child: Text('Query History')),
               const PopupMenuItem(value: 'settings', child: Text('Settings')),
             ],
           ),
@@ -251,7 +268,9 @@ class _QueryScreenState extends State<QueryScreen> {
                 width: _isRecording ? 120 : 100,
                 height: _isRecording ? 120 : 100,
                 decoration: BoxDecoration(
-                  color: _isRecording ? Colors.redAccent : (_isLoading ? Colors.grey : Colors.orange),
+                  color: _isRecording
+                      ? Colors.redAccent
+                      : (_isLoading ? Colors.grey : Colors.orange),
                   shape: BoxShape.circle,
                   boxShadow: [
                     if (_isRecording)
@@ -287,15 +306,19 @@ class _QueryScreenState extends State<QueryScreen> {
                     itemBuilder: (context, idx) {
                       final q = queryHistory[idx];
                       return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         child: ListTile(
-                          title: Text(q['question'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          title: Text(q['question'] ?? '',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text(q['answer'] ?? ''),
                           trailing: IconButton(
                             icon: const Icon(Icons.volume_up),
-                            onPressed: (_isLoading || (q['audio_url'] ?? '').isEmpty)
-                                ? null
-                                : () => _playTTS(q['audio_url']!),
+                            onPressed:
+                                (_isLoading || (q['audio_url'] ?? '').isEmpty)
+                                    ? null
+                                    : () => _playTTS(q['audio_url']!),
                           ),
                         ),
                       );
