@@ -5,4 +5,4 @@ requests
 python-dotenv
 langchain
 chromadb
-supabase-py
+supabase
