@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiService {
-  static const String backendUrl = 'http://localhost:8000'; // TODO: Set to your backend
-  static const String apiKey = 'your-backend-api-key'; // TODO: Set to your API key
+  static String get backendUrl => dotenv.env['BACKEND_URL']!;
+  static String get apiKey => dotenv.env['API_KEY']!;
 
   static Future<String?> transcribeAudio(File audioFile) async {
     final uri = Uri.parse('$backendUrl/stt');

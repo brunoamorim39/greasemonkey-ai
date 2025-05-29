@@ -18,6 +18,7 @@ dependencies:
   shared_preferences: ^2.2.2
   cupertino_icons: ^1.0.6
   animations: ^2.0.11
+  flutter_dotenv: ^5.1.0
 
 dev_dependencies:
   flutter_test:

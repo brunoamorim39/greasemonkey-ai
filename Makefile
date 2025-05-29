@@ -1,16 +1,19 @@
-BACKEND_IMAGE=greasemonkey-backend
-BACKEND_CONTAINER=greasemonkey-backend
+VENV_DIR?=.venv
+PYTHON?=python3
 
-.PHONY: build up down dev
+BACKEND_DIR?=backend
+FRONTEND_DIR?=frontend
 
-build:
-	docker build -t $(BACKEND_IMAGE) ./backend
+.PHONY: venv install dev clean
 
-up:
-	docker run -d --rm -p 8000:8000 --name $(BACKEND_CONTAINER) $(BACKEND_IMAGE)
+venv:
+	$(PYTHON) -m venv $(VENV_DIR)
 
-down:
-	docker stop $(BACKEND_CONTAINER) || true
+install: venv
+	. $(VENV_DIR)/bin/activate && pip install --upgrade pip && pip install -r $(BACKEND_DIR)/requirements.txt
 
-dev:
-	cd backend && uvicorn main:app --reload --host 0.0.0.0 --port 8000
+dev: install
+	. $(VENV_DIR)/bin/activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+clean:
+	rm -rf $(VENV_DIR) __pycache__ .pytest_cache

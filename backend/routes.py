@@ -1,10 +1,10 @@
 from fastapi import APIRouter, UploadFile, File, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Optional
-from .services import (
+from services import (
     logger, require_api_key, retrieve_fsm, call_gpt4o, call_elevenlabs_tts, log_query, OPENAI_API_KEY, ELEVENLABS_API_KEY
 )
-from .models import AskRequest, AskResponse
+from models import AskRequest, AskResponse
 
 router = APIRouter()
 
