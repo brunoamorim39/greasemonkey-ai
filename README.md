@@ -1,8 +1,8 @@
 
 # 🛠️ GreaseMonkey AI – Design Document
 
-**Version:** v0.1  
-**Date:** May 29, 2025  
+**Version:** v0.1
+**Date:** May 29, 2025
 **Author:** [You]
 
 ---
@@ -11,7 +11,7 @@
 
 GreaseMonkey AI is a mobile-first, hands-free AI copilot built for garage environments. It helps mechanics, enthusiasts, and tuners quickly retrieve technical specs, repair steps, and part information using natural language voice commands.
 
-> “What’s the torque spec for the valve cover on a 1995 E36?”  
+> “What’s the torque spec for the valve cover on a 1995 E36?”
 > “10 Nm, applied in a criss-cross pattern. Would you like the diagram?”
 
 ---
@@ -101,7 +101,7 @@ Backend API (FastAPI)
 ## 🛣️ 7. Roadmap
 
 ### Phase 1: MVP
-- [ ] Flutter app with push-to-talk mic
+- [ ] Flutter app with voice activation (wake word) mic
 - [ ] Whisper STT
 - [ ] GPT-4o query engine
 - [ ] ElevenLabs TTS
@@ -165,7 +165,7 @@ Backend API (FastAPI)
 ---
 
 ### DIY Flex Plan (Usage-Based)
-**Cost:** $0.10/query after 3/day  
+**Cost:** $0.10/query after 3/day
 **Audience:** Enthusiasts, part-time wrenchers
 
 - ✅ High-quality TTS
@@ -177,7 +177,7 @@ Backend API (FastAPI)
 ---
 
 ### Pro Tier (For Shops & Heavy Users)
-**Cost:** $29/month  
+**Cost:** $29/month
 **Audience:** Professional users, garage shops
 
 - ✅ Unlimited queries
