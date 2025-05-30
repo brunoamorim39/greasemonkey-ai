@@ -26,11 +26,15 @@ class _LaunchScreenState extends State<LaunchScreen> {
     final supabase = Supabase.instance.client;
     final session = supabase.auth.currentSession;
     if (session != null) {
-      provider_pkg.Provider.of<AppState>(context, listen: false)
-          .setUserId(session.user.id);
-      Navigator.pushReplacementNamed(context, '/garage');
+      if (mounted) {
+        provider_pkg.Provider.of<AppState>(context, listen: false)
+            .setUserId(session.user.id);
+        Navigator.pushReplacementNamed(context, '/garage');
+      }
     } else {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -45,14 +49,18 @@ class _LaunchScreenState extends State<LaunchScreen> {
       password: _passwordController.text.trim(),
     );
     if (res.user != null) {
-      provider_pkg.Provider.of<AppState>(context, listen: false)
-          .setUserId(res.user!.id);
-      Navigator.pushReplacementNamed(context, '/garage');
+      if (mounted) {
+        provider_pkg.Provider.of<AppState>(context, listen: false)
+            .setUserId(res.user!.id);
+        Navigator.pushReplacementNamed(context, '/garage');
+      }
     } else {
-      setState(() {
-        _loading = false;
-        _error = 'Login failed';
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Login failed';
+        });
+      }
     }
   }
 
@@ -67,14 +75,18 @@ class _LaunchScreenState extends State<LaunchScreen> {
       password: _passwordController.text.trim(),
     );
     if (res.user != null) {
-      provider_pkg.Provider.of<AppState>(context, listen: false)
-          .setUserId(res.user!.id);
-      Navigator.pushReplacementNamed(context, '/garage');
+      if (mounted) {
+        provider_pkg.Provider.of<AppState>(context, listen: false)
+            .setUserId(res.user!.id);
+        Navigator.pushReplacementNamed(context, '/garage');
+      }
     } else {
-      setState(() {
-        _loading = false;
-        _error = 'Signup failed';
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Signup failed';
+        });
+      }
     }
   }
 

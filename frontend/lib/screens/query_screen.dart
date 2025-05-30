@@ -28,7 +28,6 @@ class _QueryScreenState extends State<QueryScreen> {
   WakeWordService? _wakeWordService;
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isLoading = false;
-  String? _errorMsg;
   double _playbackSpeed = 1.0;
   bool _autoPlay = true;
 
@@ -81,14 +80,12 @@ class _QueryScreenState extends State<QueryScreen> {
     if (_audioPath != null) {
       setState(() {
         _isLoading = true;
-        _errorMsg = null;
       });
       final audioFile = File(_audioPath!);
       final text = await ApiService.transcribeAudio(audioFile);
       if (text == null || text.isEmpty) {
         setState(() {
           _isLoading = false;
-          _errorMsg = 'Could not transcribe audio.';
         });
         _showError('Could not transcribe audio.');
         return;
@@ -103,7 +100,6 @@ class _QueryScreenState extends State<QueryScreen> {
       if (answer == null) {
         setState(() {
           _isLoading = false;
-          _errorMsg = 'Backend error.';
         });
         _showError('Backend error.');
         return;
@@ -205,7 +201,6 @@ class _QueryScreenState extends State<QueryScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    final vehicle = appState.activeVehicle;
     final queryHistory = appState.queryHistory;
     return Scaffold(
       appBar: AppBar(
@@ -275,7 +270,7 @@ class _QueryScreenState extends State<QueryScreen> {
                   boxShadow: [
                     if (_isRecording)
                       BoxShadow(
-                        color: Colors.red.withOpacity(0.5),
+                        color: Colors.red.withValues(alpha: 0.5),
                         blurRadius: 24,
                         spreadRadius: 4,
                       ),
