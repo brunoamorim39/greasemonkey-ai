@@ -52,7 +52,7 @@ def test_call_gpt4o_without_api_key():
 
 def test_call_gpt4o_success():
     """Test successful GPT-4o API call"""
-    with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
+    with patch('services.OPENAI_API_KEY', 'test-key'):
         with patch('services.requests') as mock_requests:
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -67,7 +67,7 @@ def test_call_gpt4o_success():
 
 def test_call_gpt4o_api_error():
     """Test GPT-4o API error handling"""
-    with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
+    with patch('services.OPENAI_API_KEY', 'test-key'):
         with patch('services.requests') as mock_requests:
             mock_response = MagicMock()
             mock_response.status_code = 400
