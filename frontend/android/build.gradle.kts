@@ -8,16 +8,7 @@ allprojects {
 subprojects {
     // Configure JVM Toolchain for all subprojects
     afterEvaluate {
-        if (project.hasProperty("android")) {
-            extensions.findByType<com.android.build.gradle.BaseExtension>()?.apply {
-                compileOptions {
-                    sourceCompatibility = JavaVersion.VERSION_11
-                    targetCompatibility = JavaVersion.VERSION_11
-                }
-            }
-        }
-
-        // Configure Kotlin for all subprojects
+        // Only configure Kotlin compilation, not Android compileSdk
         tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
             kotlinOptions {
                 jvmTarget = "11"
