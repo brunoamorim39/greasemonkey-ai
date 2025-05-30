@@ -37,7 +37,7 @@ jobs:
     - name: Run tests
       run: |
         cd backend
-        pytest --cov=. --cov-report=xml
+        python -m pytest --cov=. --cov-report=xml
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -70,6 +70,4 @@ jobs:
 
     - name: Deploy to production
       run: |
-        echo "Deploy to production would happen here"
-        # Add your deployment commands here
-        # e.g., deploy to Railway, Render, or Fly.io
+        echo "Ready to deploy to production!"
