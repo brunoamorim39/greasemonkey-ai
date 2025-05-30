@@ -65,10 +65,10 @@ workflows:
           cd frontend
           flutter build apk --release
 
-      - name: Build iOS (if building for iOS)
+      - name: Build iOS
         script: |
           cd frontend
-          flutter build ios --release --no-codesign
+          flutter build ios --release
 
     artifacts:
       - frontend/build/**/outputs/**/*.apk
