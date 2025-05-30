@@ -50,15 +50,24 @@ def test_call_gpt4o_without_api_key():
         assert result == "OPENAI_API_KEY not set"
 
 
-@patch('services.requests.post')
-def test_call_gpt4o_success(mock_post):
+@patch('builtins.__import__')
+def test_call_gpt4o_success(mock_import):
     """Test successful GPT-4o API call"""
+    # Mock the requests module
+    mock_requests = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
         "choices": [{"message": {"content": "4.5 quarts with filter"}}]
     }
-    mock_post.return_value = mock_response
+    mock_requests.post.return_value = mock_response
+
+    def side_effect(name, *args, **kwargs):
+        if name == 'requests':
+            return mock_requests
+        return __import__(name, *args, **kwargs)
+
+    mock_import.side_effect = side_effect
 
     with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
         import services
@@ -68,13 +77,22 @@ def test_call_gpt4o_success(mock_post):
         assert result == "4.5 quarts with filter"
 
 
-@patch('services.requests.post')
-def test_call_gpt4o_api_error(mock_post):
+@patch('builtins.__import__')
+def test_call_gpt4o_api_error(mock_import):
     """Test GPT-4o API error handling"""
+    # Mock the requests module
+    mock_requests = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 400
     mock_response.text = "Bad request"
-    mock_post.return_value = mock_response
+    mock_requests.post.return_value = mock_response
+
+    def side_effect(name, *args, **kwargs):
+        if name == 'requests':
+            return mock_requests
+        return __import__(name, *args, **kwargs)
+
+    mock_import.side_effect = side_effect
 
     with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
         import services

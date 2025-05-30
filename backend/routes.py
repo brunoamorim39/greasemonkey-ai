@@ -14,7 +14,7 @@ def root():
 
 @router.post("/ask", response_model=AskResponse, tags=["AI"], summary="Ask a question", description="Ask a car-related question. Uses FSM retrieval, GPT-4o, TTS, and logs to Supabase.")
 @require_api_key
-def ask(request: AskRequest, request_: Request):
+async def ask(request: AskRequest, request_: Request):
     try:
         fsm_snippet = retrieve_fsm(request.question, car=request.car)
         if fsm_snippet:
@@ -37,7 +37,7 @@ def ask(request: AskRequest, request_: Request):
 
 @router.post("/stt", tags=["STT"], summary="Speech-to-text", description="Transcribe audio using Whisper API.")
 @require_api_key
-def stt(file: UploadFile = File(...), request: Request = None):
+async def stt(file: UploadFile = File(...), request: Request = None):
     if not OPENAI_API_KEY:
         logger.error("OPENAI_API_KEY not set")
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
@@ -65,7 +65,7 @@ def stt(file: UploadFile = File(...), request: Request = None):
 
 @router.post("/tts", tags=["TTS"], summary="Text-to-speech", description="Convert text to speech using ElevenLabs API.")
 @require_api_key
-def tts(text: str, request: Request = None):
+async def tts(text: str, request: Request = None):
     if not ELEVENLABS_API_KEY:
         logger.error("ELEVENLABS_API_KEY not set")
         raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not set")

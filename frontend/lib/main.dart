@@ -24,9 +24,11 @@ class GreaseMonkeyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'GreaseMonkey AI',
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.deepOrange,
+            brightness: Brightness.dark,
+          ),
           useMaterial3: true,
-          brightness: Brightness.dark, // Garage-friendly
         ),
         debugShowCheckedModeBanner: false,
         initialRoute: '/',
