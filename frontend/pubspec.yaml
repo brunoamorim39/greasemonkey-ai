@@ -13,7 +13,7 @@ dependencies:
   http: ^1.2.1
   flutter_sound: ^9.2.13
   just_audio: ^0.9.36
-  porcupine_flutter: ^2.2.0
+  porcupine_flutter: ^3.0.4
   supabase_flutter: ^1.10.5
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
