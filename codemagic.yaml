@@ -23,6 +23,13 @@ workflows:
         includes:
           - 'frontend/**'
           - 'codemagic.yaml'
+        excludes:
+          - '.github/**'
+          - 'backend/**'
+          - 'docker-compose.yaml'
+          - 'render.yaml'
+          - 'tools/**'
+          - '*.md'
 
     environment:
       flutter: stable

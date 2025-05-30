@@ -33,9 +33,13 @@ frontend-shell:
 	docker compose exec frontend /bin/sh
 
 # --- Testing targets ---
-test:
-	cd $(BACKEND_DIR) && python -m pytest
-	cd $(FRONTEND_DIR) && flutter test
+test: backend-test frontend-test
+
+backend-test:
+	docker compose --profile test run --rm backend-test
+
+frontend-test:
+	docker compose --profile test run --rm frontend-test
 
 # --- Tools targets ---
 tools-install:

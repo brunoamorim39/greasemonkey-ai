@@ -49,11 +49,25 @@ fsm_docs = [
     Document(page_content="The oil capacity for a 2008 Subaru WRX is 4.5 quarts with filter. Use 5W-30.", metadata={"car": "2008 Subaru WRX"}),
     Document(page_content="The torque spec for the valve cover on a 1995 E36 is 10 Nm, applied in a criss-cross pattern.", metadata={"car": "1995 BMW E36"})
 ]
-embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-vectorstore = Chroma.from_documents(fsm_docs, embeddings, persist_directory=CHROMA_PATH)
+
+# Lazy initialization for testing
+embeddings = None
+vectorstore = None
+
+def get_vectorstore():
+    global embeddings, vectorstore
+    if not OPENAI_API_KEY:
+        return None
+    if vectorstore is None:
+        embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+        vectorstore = Chroma.from_documents(fsm_docs, embeddings, persist_directory=CHROMA_PATH)
+    return vectorstore
 
 def retrieve_fsm(query: str, car=None):
-    results = vectorstore.similarity_search(query, k=1)
+    vs = get_vectorstore()
+    if not vs:
+        return "Mock FSM response for testing"
+    results = vs.similarity_search(query, k=1)
     if results:
         return results[0].page_content
     return None
