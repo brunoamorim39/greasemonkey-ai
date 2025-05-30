@@ -32,12 +32,21 @@ def check_api_key(request: Request):
 def require_api_key(endpoint):
     @wraps(endpoint)
     async def wrapper(*args, **kwargs):
-        request = kwargs.get('request')
-        if not request:
+        # Look for FastAPI Request object in kwargs (could be named 'request' or 'request_')
+        request = kwargs.get('request_') or kwargs.get('request')
+
+        # If not found in kwargs, search through all args and kwargs for Request instance
+        if not request or not isinstance(request, Request):
             for arg in args:
                 if isinstance(arg, Request):
                     request = arg
                     break
+            if not request:
+                for value in kwargs.values():
+                    if isinstance(value, Request):
+                        request = value
+                        break
+
         if not request:
             raise HTTPException(status_code=500, detail="Request object not found for API key check")
         check_api_key(request)

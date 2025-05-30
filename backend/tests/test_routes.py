@@ -1,8 +1,10 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
+from io import BytesIO
 import sys
 import os
+import uuid
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from main import app
@@ -40,18 +42,22 @@ def test_ask_endpoint_with_invalid_api_key():
         assert response.status_code == 401
 
 
+@patch('routes.log_query')  # Mock the log_query function to avoid Supabase UUID validation
 @patch('routes.call_gpt4o')
 @patch('routes.retrieve_fsm')
-def test_ask_endpoint_success(mock_retrieve_fsm, mock_call_gpt4o):
+def test_ask_endpoint_success(mock_retrieve_fsm, mock_call_gpt4o, mock_log_query):
     """Test successful ask endpoint"""
     mock_retrieve_fsm.return_value = "4.5 quarts with filter"
     mock_call_gpt4o.return_value = "The oil capacity is 4.5 quarts with filter."
+    mock_log_query.return_value = None  # Mock the logging function
 
     with patch('services.API_KEY', 'test-key'):
+        # Use a valid UUID for user_id
+        test_user_id = str(uuid.uuid4())
         response = client.post("/ask",
             json={
                 "question": "What's the oil capacity?",
-                "user_id": "test_user",
+                "user_id": test_user_id,
                 "car": "2008 Subaru WRX"
             },
             headers={"x-api-key": "test-key"}
@@ -66,7 +72,6 @@ def test_stt_endpoint_without_api_key():
     """Test that STT endpoint requires API key"""
     with patch('services.API_KEY', 'test-key'):
         # Create a dummy file for the upload
-        from io import BytesIO
         dummy_file = ("test.wav", BytesIO(b"dummy audio data"), "audio/wav")
         response = client.post("/stt", files={"file": dummy_file})
         assert response.status_code == 401
@@ -80,10 +85,14 @@ def test_tts_endpoint_without_api_key():
             assert response.status_code == 401
 
 
-@patch('routes.call_elevenlabs_tts')
-def test_tts_endpoint_success(mock_tts):
+@patch('requests.post')  # Patch requests.post directly instead of routes.requests
+def test_tts_endpoint_success(mock_requests_post):
     """Test successful TTS endpoint"""
-    mock_tts.return_value = "/tts?text=hello%20world"
+    # Mock the requests.post response
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raw = BytesIO(b"fake audio data")
+    mock_requests_post.return_value = mock_response
 
     with patch('services.API_KEY', 'test-key'):
         with patch('routes.ELEVENLABS_API_KEY', 'test-eleven'):
