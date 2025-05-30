@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../services/audio_recording_service.dart';
 import '../services/wakeword_service.dart';
 import '../state/app_state.dart';
 import 'query_history_screen.dart';
@@ -23,7 +23,7 @@ class _QueryScreenState extends State<QueryScreen> {
   bool _wakeWordEnabled = false;
   bool _isListening = false;
   bool _isPlayingTTS = false;
-  FlutterSoundRecorder? _recorder;
+  AudioRecordingService? _audioService;
   String? _audioPath;
   WakeWordService? _wakeWordService;
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -34,8 +34,7 @@ class _QueryScreenState extends State<QueryScreen> {
   @override
   void initState() {
     super.initState();
-    _recorder = FlutterSoundRecorder();
-    _recorder!.openRecorder();
+    _audioService = AudioRecordingService();
     _loadAudioSettings();
   }
 
@@ -49,7 +48,7 @@ class _QueryScreenState extends State<QueryScreen> {
 
   @override
   void dispose() {
-    _recorder?.closeRecorder();
+    _audioService?.dispose();
     _wakeWordService?.stop();
     _audioPlayer.dispose();
     super.dispose();
@@ -65,18 +64,31 @@ class _QueryScreenState extends State<QueryScreen> {
   }
 
   Future<void> _startRecording() async {
-    final dir = await getTemporaryDirectory();
-    _audioPath = '${dir.path}/query.wav';
-    await _recorder!.startRecorder(toFile: _audioPath, codec: Codec.pcm16WAV);
-    setState(() => _isRecording = true);
+    if (_audioService == null) return;
+
+    final success = await _audioService!.startRecording();
+    if (success) {
+      setState(() => _isRecording = true);
+    } else {
+      _showError('Failed to start recording. Please check microphone permissions.');
+    }
   }
 
   Future<void> _stopRecordingAndQuery() async {
     final appState = Provider.of<AppState>(context, listen: false);
     final userId = appState.userId ?? appState.hashCode.toString();
     final vehicle = appState.activeVehicle;
-    await _recorder!.stopRecorder();
+
+    final audioPath = await _audioService!.stopRecording();
     setState(() => _isRecording = false);
+
+    if (audioPath == null) {
+      _showError('Failed to save recording.');
+      return;
+    }
+
+    _audioPath = audioPath;
+
     if (_audioPath != null) {
       setState(() {
         _isLoading = true;
@@ -153,6 +165,7 @@ class _QueryScreenState extends State<QueryScreen> {
     setState(() => _isPlayingTTS = true);
     try {
       await _audioPlayer.setUrl(audioUrl);
+      await _audioPlayer.seek(Duration.zero);
       await _audioPlayer.setSpeed(_playbackSpeed);
       await _audioPlayer.play();
     } catch (e) {

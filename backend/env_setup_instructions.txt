@@ -1,0 +1,23 @@
+INSTRUCTIONS FOR FIXING OPENAI API AUTHENTICATION
+==============================================
+
+You need to add these lines to your backend/.env file:
+
+OPENAI_ORGANIZATION=your-org-id-here
+OPENAI_PROJECT=your-project-id-here
+
+To find these values:
+1. Go to https://platform.openai.com/settings/organization
+2. Copy your Organization ID (starts with "org-")
+3. Go to https://platform.openai.com/settings/proj
+4. Copy your Project ID (starts with "proj_")
+
+Example .env additions:
+OPENAI_ORGANIZATION=org-abc123def456
+OPENAI_PROJECT=proj_xyz789uvw123
+
+After adding these, restart the backend:
+make stop-backend
+make run-backend
+
+The new sk-proj- API keys require these headers for authentication.

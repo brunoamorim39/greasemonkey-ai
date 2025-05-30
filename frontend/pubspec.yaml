@@ -11,9 +11,10 @@ dependencies:
     sdk: flutter
   provider: ^6.1.2
   http: ^1.2.1
-  flutter_sound: ^9.2.13
+  record: ^6.0.0
   just_audio: ^0.9.36
   porcupine_flutter: ^3.0.4
+  flutter_voice_processor: ^1.0.0
   supabase_flutter: ^1.10.5
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
@@ -21,6 +22,7 @@ dependencies:
   animations: ^2.0.11
   flutter_dotenv: ^5.1.0
   sentry_flutter: ^8.14.2
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
@@ -32,3 +34,8 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+  assets:
+    - .env
+    - assets/
+    - assets/greasemonkey.ppn
+    - assets/porcupine_params.pv

@@ -1,14 +1,38 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as provider_pkg;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'state/app_state.dart';
 import 'models/vehicle.dart';
-import 'screens/query_screen.dart';
+import 'screens/main_screen.dart';
 import 'screens/launch_screen.dart';
+import 'screens/signup_screen.dart';
+import 'screens/settings_screen.dart';
+import 'screens/vehicle_edit_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
+
+  // Try to load .env file, but don't fail if it doesn't exist
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    print('Warning: .env file not found, using default values: $e');
+    // Load default values using testLoad when .env file doesn't exist
+    dotenv.testLoad(fileInput: '''
+BACKEND_URL=http://localhost:8000
+API_KEY=your-secure-api-key-here
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
+''');
+  }
+
+  // Initialize Supabase
+  await Supabase.initialize(
+    url: dotenv.env['SUPABASE_URL'] ?? 'https://your-project.supabase.co',
+    anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? 'your-anon-key-here',
+  );
+
   runApp(const GreaseMonkeyApp());
 }
 
@@ -17,9 +41,9 @@ class GreaseMonkeyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
+    return provider_pkg.MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AppState()),
+        provider_pkg.ChangeNotifierProvider(create: (_) => AppState()),
       ],
       child: MaterialApp(
         title: 'GreaseMonkey AI',
@@ -34,8 +58,10 @@ class GreaseMonkeyApp extends StatelessWidget {
         initialRoute: '/',
         routes: {
           '/': (context) => const LaunchScreen(),
+          '/main': (context) => const MainScreen(),
           '/garage': (context) => const GarageDashboard(),
-          '/query': (context) => const QueryScreen(),
+          '/signup': (context) => const SignupScreen(),
+          '/settings': (context) => const SettingsScreen(),
         },
       ),
     );
@@ -80,18 +106,10 @@ class GarageDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
+    final appState = provider_pkg.Provider.of<AppState>(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Your Garage'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              // TODO: Navigate to settings
-            },
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -112,31 +130,52 @@ class GarageDashboard extends StatelessWidget {
                     itemBuilder: (context, idx) {
                       final v = appState.vehicles[idx];
                       final isActive = v == appState.activeVehicle;
-                      return ListTile(
-                        title: Text(v.name),
-                        subtitle: Text(v.engine +
-                            (v.notes.isNotEmpty ? ' — ${v.notes}' : '')),
-                        leading: isActive
-                            ? const Icon(Icons.directions_car,
-                                color: Colors.orange)
-                            : const Icon(Icons.directions_car),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (!isActive)
-                              TextButton(
-                                child: const Text('Set Active'),
-                                onPressed: () => appState.setActiveVehicle(v),
-                              ),
-                            if (isActive)
-                              ElevatedButton.icon(
-                                icon: const Icon(Icons.mic),
-                                label: const Text('Ask'),
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        child: ListTile(
+                          title: Text(
+                            _getVehicleDisplayName(v),
+                            style: TextStyle(
+                              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Engine: ${v.engine}'),
+                              if (v.notes.isNotEmpty)
+                                Text(v.notes, style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+                            ],
+                          ),
+                          leading: Icon(
+                            Icons.directions_car,
+                            color: isActive ? Colors.orange : null,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit),
                                 onPressed: () {
-                                  Navigator.pushNamed(context, '/query');
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => VehicleEditScreen(
+                                        vehicle: v,
+                                        vehicleIndex: idx,
+                                      ),
+                                    ),
+                                  );
                                 },
                               ),
-                          ],
+                              if (!isActive)
+                                TextButton(
+                                  child: const Text('Set Active'),
+                                  onPressed: () => appState.setActiveVehicle(v),
+                                ),
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -148,60 +187,165 @@ class GarageDashboard extends StatelessWidget {
   }
 
   void _showAddVehicleDialog(BuildContext context) {
-    final nameController = TextEditingController();
-    final engineController = TextEditingController();
-    final notesController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Add Vehicle'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                      labelText: 'Car (e.g. 2008 Subaru WRX)'),
-                ),
-                TextField(
-                  controller: engineController,
-                  decoration:
-                      const InputDecoration(labelText: 'Engine (e.g. EJ255)'),
-                ),
-                TextField(
-                  controller: notesController,
-                  decoration:
-                      const InputDecoration(labelText: 'Notes (optional)'),
-                ),
-              ],
-            ),
+      builder: (context) => const AddVehicleDialog(),
+    );
+  }
+
+  String _getVehicleDisplayName(Vehicle vehicle) {
+    if (vehicle.nickname.isNotEmpty) {
+      return '${vehicle.nickname} (${vehicle.name})';
+    } else {
+      return vehicle.name;
+    }
+  }
+}
+
+class AddVehicleDialog extends StatefulWidget {
+  const AddVehicleDialog({super.key});
+
+  @override
+  State<AddVehicleDialog> createState() => _AddVehicleDialogState();
+}
+
+class _AddVehicleDialogState extends State<AddVehicleDialog> {
+  final nameController = TextEditingController();
+  final engineController = TextEditingController();
+  final nicknameController = TextEditingController();
+  bool isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Add listeners to update button state when text changes
+    nameController.addListener(_updateButtonState);
+    engineController.addListener(_updateButtonState);
+  }
+
+  @override
+  void dispose() {
+    nameController.removeListener(_updateButtonState);
+    engineController.removeListener(_updateButtonState);
+    nameController.dispose();
+    engineController.dispose();
+    nicknameController.dispose();
+    super.dispose();
+  }
+
+  void _updateButtonState() {
+    setState(() {
+      // This will trigger a rebuild and re-evaluate the button state
+    });
+  }
+
+  bool get _isFormValid {
+    return nameController.text.trim().isNotEmpty &&
+           engineController.text.trim().isNotEmpty;
+  }
+
+  Future<void> _addVehicle() async {
+    if (!_isFormValid) {
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final newVehicle = Vehicle(
+        name: nameController.text.trim(),
+        engine: engineController.text.trim(),
+        nickname: nicknameController.text.trim(),
+      );
+
+      await provider_pkg.Provider.of<AppState>(context, listen: false).addVehicle(newVehicle);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Vehicle added! Tap the edit button to add notes and other details.'),
+            duration: Duration(seconds: 3),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (nameController.text.isNotEmpty &&
-                    engineController.text.isNotEmpty) {
-                  Provider.of<AppState>(context, listen: false).addVehicle(
-                    Vehicle(
-                      name: nameController.text,
-                      engine: engineController.text,
-                      notes: notesController.text,
-                    ),
-                  );
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
         );
-      },
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error adding vehicle: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add Vehicle'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              enabled: !isLoading,
+              decoration: const InputDecoration(
+                labelText: 'Vehicle Name *',
+                hintText: 'e.g. 2008 Subaru WRX',
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: nicknameController,
+              enabled: !isLoading,
+              decoration: const InputDecoration(
+                labelText: 'Nickname (Optional)',
+                hintText: 'e.g. "Blue Beast", "Daily Driver"',
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: engineController,
+              enabled: !isLoading,
+              decoration: const InputDecoration(
+                labelText: 'Engine *',
+                hintText: 'e.g. EJ255, LS3, 2JZ-GTE',
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'You can add notes and other details after creating the vehicle.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            if (isLoading) ...[
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: isLoading ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: isLoading || !_isFormValid ? null : _addVehicle,
+          child: isLoading ? const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ) : const Text('Add'),
+        ),
+      ],
     );
   }
 }

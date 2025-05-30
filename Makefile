@@ -11,62 +11,199 @@ FRONTEND_IMAGE?=greasemonkey-frontend
 FRONTEND_TAG?=latest
 FRONTEND_PORT?=8080
 
-.PHONY: venv install dev dev-venv clean down backend-shell frontend-shell tools-install ingest-fsm test build-android
+.PHONY: help install-deps clean build test run-backend stop-backend logs-backend run-app run-macos run-ios run-android run-web build-app build-macos build-ios build-android build-web flutter-clean flutter-deps
 
-# --- Docker Compose targets ---
-dev:
-	docker compose up --build
+# Default target
+help: ## Show this help message
+	@echo "GreaseMonkey AI Development Commands"
+	@echo "===================================="
+	@echo ""
+	@echo "Backend Commands:"
+	@echo "  run-backend     - Start backend services in Docker"
+	@echo "  stop-backend    - Stop backend services"
+	@echo "  logs-backend    - View backend logs"
+	@echo "  build-backend   - Build backend Docker image"
+	@echo ""
+	@echo "Flutter App Commands:"
+	@echo "  run-app DEVICE=<device>  - Run Flutter app on specified device"
+	@echo "  run-macos       - Run Flutter app on macOS"
+	@echo "  run-ios         - Run Flutter app on iOS simulator"
+	@echo "  run-android     - Run Flutter app on Android emulator"
+	@echo "  run-web         - Run Flutter app on web"
+	@echo ""
+	@echo "Build Commands:"
+	@echo "  build-app DEVICE=<device> - Build Flutter app for specified device"
+	@echo "  build-macos     - Build macOS app"
+	@echo "  build-ios       - Build iOS app"
+	@echo "  build-android   - Build Android APK"
+	@echo "  build-web       - Build web app"
+	@echo ""
+	@echo "Development Commands:"
+	@echo "  install-deps    - Install all dependencies"
+	@echo "  flutter-deps    - Install Flutter dependencies"
+	@echo "  flutter-clean   - Clean Flutter build cache"
+	@echo "  clean           - Clean all build artifacts"
+	@echo "  test            - Run tests"
+	@echo ""
+	@echo "Full Stack Development:"
+	@echo "  dev-macos       - Start backend + run macOS app"
+	@echo "  dev-ios         - Start backend + run iOS app"
+	@echo "  dev-android     - Start backend + run Android app"
+	@echo "  dev-web         - Start backend + run web app"
+	@echo ""
+	@echo "Usage Examples:"
+	@echo "  make run-app DEVICE=macos"
+	@echo "  make dev-macos"
+	@echo "  make build-macos"
 
-down:
-	docker compose down
+# Variables
+DEVICE ?= macos
+FLUTTER_DIR = frontend
 
-backend-dev:
-	docker compose up --build backend
+# Backend Commands
+run-backend: ## Start backend services
+	@echo "🚀 Starting backend services..."
+	docker-compose up backend -d
+	@echo "✅ Backend running at http://localhost:8000"
+	@echo "📊 View logs with: make logs-backend"
 
-frontend-dev:
-	docker compose up --build frontend
+stop-backend: ## Stop backend services
+	@echo "🛑 Stopping backend services..."
+	docker-compose down
 
-backend-shell:
-	docker compose exec backend /bin/sh
+logs-backend: ## View backend logs
+	@echo "📊 Backend logs (Ctrl+C to exit)..."
+	docker-compose logs -f backend
 
-frontend-shell:
-	docker compose exec frontend /bin/sh
+build-backend: ## Build backend Docker image
+	@echo "🔨 Building backend Docker image..."
+	docker-compose build backend
 
-# --- Mobile Build targets ---
-build-android:
-	@echo "🔨 Building Android APK locally..."
-	cd $(FRONTEND_DIR) && chmod +x build-android-local.sh && ./build-android-local.sh
+# Flutter App Commands
+flutter-deps: ## Install Flutter dependencies
+	@echo "📦 Installing Flutter dependencies..."
+	cd $(FLUTTER_DIR) && flutter pub get
 
-# --- Testing targets ---
-test: backend-test frontend-test
+flutter-clean: ## Clean Flutter build cache
+	@echo "🧹 Cleaning Flutter build cache..."
+	cd $(FLUTTER_DIR) && flutter clean
+	cd $(FLUTTER_DIR) && flutter pub get
 
-backend-test:
-	docker compose --profile test run --rm backend-test
+run-app: flutter-deps ## Run Flutter app on specified device (use DEVICE=<device>)
+	@echo "🚀 Running Flutter app on $(DEVICE)..."
+	cd $(FLUTTER_DIR) && flutter run -d $(DEVICE)
 
-frontend-test:
-	docker compose --profile test run --rm frontend-test
+run-macos: ## Run Flutter app on macOS
+	@echo "🍎 Running Flutter app on macOS..."
+	$(MAKE) run-app DEVICE=macos
 
-# --- Tools targets ---
-tools-install:
-	cd $(TOOLS_DIR) && pip install -r requirements.txt
+run-ios: ## Run Flutter app on iOS simulator
+	@echo "📱 Running Flutter app on iOS simulator..."
+	$(MAKE) run-app DEVICE="iPhone 15"
 
-ingest-fsm:
-	@echo "Usage: make ingest-fsm FILE=path/to/manual.pdf CAR='2008 Subaru WRX' ENGINE='EJ255'"
-	@if [ -z "$(FILE)" ]; then echo "Error: FILE parameter required"; exit 1; fi
-	@if [ -z "$(CAR)" ]; then echo "Error: CAR parameter required"; exit 1; fi
-	cd $(TOOLS_DIR) && python fsm_ingestion.py "$(FILE)" --car "$(CAR)" $(if $(ENGINE),--engine "$(ENGINE)") $(if $(YEAR),--year "$(YEAR)")
+run-android: ## Run Flutter app on Android emulator
+	@echo "🤖 Running Flutter app on Android emulator..."
+	$(MAKE) run-app DEVICE=android
 
-# --- Legacy venv targets (for local, non-docker dev) ---
-venv:
-	$(PYTHON) -m venv $(VENV_DIR)
+run-web: ## Run Flutter app on web
+	@echo "🌐 Running Flutter app on web..."
+	$(MAKE) run-app DEVICE=chrome
 
-install: venv
-	. $(VENV_DIR)/bin/activate && pip install --upgrade pip && pip install -r $(BACKEND_DIR)/requirements.txt
+# Build Commands
+build-app: flutter-deps ## Build Flutter app for specified device (use DEVICE=<device>)
+	@echo "🔨 Building Flutter app for $(DEVICE)..."
+	cd $(FLUTTER_DIR) && flutter build $(DEVICE)
 
-dev-venv: install
-	. $(VENV_DIR)/bin/activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000
+build-macos: ## Build macOS app
+	@echo "🍎 Building macOS app..."
+	cd $(FLUTTER_DIR) && flutter build macos
 
-clean:
-	rm -rf $(VENV_DIR) __pycache__ .pytest_cache
-	rm -rf $(BACKEND_DIR)/__pycache__ $(BACKEND_DIR)/.pytest_cache
-	rm -rf chroma_db/
+build-ios: ## Build iOS app
+	@echo "📱 Building iOS app..."
+	cd $(FLUTTER_DIR) && flutter build ios
+
+build-android: ## Build Android APK
+	@echo "🤖 Building Android APK..."
+	cd $(FLUTTER_DIR) && flutter build apk
+
+build-web: ## Build web app
+	@echo "🌐 Building web app..."
+	cd $(FLUTTER_DIR) && flutter build web
+
+# Full Stack Development (Backend + Frontend)
+dev-macos: ## Start backend and run macOS app
+	@echo "🚀 Starting full development environment for macOS..."
+	$(MAKE) run-backend
+	@echo "⏳ Waiting for backend to start..."
+	@sleep 3
+	$(MAKE) run-macos
+
+dev-ios: ## Start backend and run iOS app
+	@echo "🚀 Starting full development environment for iOS..."
+	$(MAKE) run-backend
+	@echo "⏳ Waiting for backend to start..."
+	@sleep 3
+	$(MAKE) run-ios
+
+dev-android: ## Start backend and run Android app
+	@echo "🚀 Starting full development environment for Android..."
+	$(MAKE) run-backend
+	@echo "⏳ Waiting for backend to start..."
+	@sleep 3
+	$(MAKE) run-android
+
+dev-web: ## Start backend and run web app
+	@echo "🚀 Starting full development environment for web..."
+	$(MAKE) run-backend
+	@echo "⏳ Waiting for backend to start..."
+	@sleep 3
+	$(MAKE) run-web
+
+# Development Commands
+install-deps: ## Install all dependencies
+	@echo "📦 Installing all dependencies..."
+	$(MAKE) flutter-deps
+	@echo "✅ All dependencies installed!"
+
+clean: ## Clean all build artifacts
+	@echo "🧹 Cleaning all build artifacts..."
+	$(MAKE) flutter-clean
+	docker-compose down --volumes --remove-orphans
+	docker system prune -f
+
+test: ## Run tests
+	@echo "🧪 Running tests..."
+	cd $(FLUTTER_DIR) && flutter test
+	cd $(BACKEND_DIR) && python -m pytest
+
+# Package/Deploy Commands
+package-macos: build-macos ## Package macOS app for distribution
+	@echo "📦 Packaging macOS app..."
+	@echo "✅ macOS app built at: $(FLUTTER_DIR)/build/macos/Build/Products/Release/greasemonkey_ai.app"
+
+package-ios: build-ios ## Package iOS app for distribution
+	@echo "📦 Packaging iOS app..."
+	cd $(FLUTTER_DIR) && flutter build ipa
+	@echo "✅ iOS app built at: $(FLUTTER_DIR)/build/ios/ipa/"
+
+package-android: build-android ## Package Android app for distribution
+	@echo "📦 Packaging Android app..."
+	@echo "✅ Android APK built at: $(FLUTTER_DIR)/build/app/outputs/flutter-apk/app-release.apk"
+
+# Utility Commands
+check-devices: ## List available devices
+	@echo "📱 Available devices:"
+	cd $(FLUTTER_DIR) && flutter devices
+
+doctor: ## Run Flutter doctor
+	@echo "🩺 Running Flutter doctor..."
+	cd $(FLUTTER_DIR) && flutter doctor
+
+# Environment setup
+setup-env: ## Set up development environment
+	@echo "🛠️  Setting up development environment..."
+	@echo "📦 Installing Flutter dependencies..."
+	$(MAKE) flutter-deps
+	@echo "🩺 Running Flutter doctor..."
+	$(MAKE) doctor
+	@echo "✅ Environment setup complete!"

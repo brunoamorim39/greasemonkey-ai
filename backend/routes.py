@@ -2,7 +2,8 @@ from fastapi import APIRouter, UploadFile, File, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Optional
 from services import (
-    logger, require_api_key, retrieve_fsm, call_gpt4o, call_elevenlabs_tts, log_query, OPENAI_API_KEY, ELEVENLABS_API_KEY
+    logger, require_api_key, retrieve_fsm, call_gpt4o, call_elevenlabs_tts, log_query,
+    OPENAI_API_KEY, OPENAI_ORGANIZATION, OPENAI_PROJECT, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
 )
 from models import AskRequest, AskResponse
 
@@ -16,7 +17,7 @@ def root():
 @require_api_key
 async def ask(request: AskRequest, request_: Request):
     try:
-        fsm_snippet = retrieve_fsm(request.question, car=request.car)
+        fsm_snippet = retrieve_fsm(request.question, car=request.car, user_id=request.user_id)
         if fsm_snippet:
             context = f"FSM: {fsm_snippet}\n"
         else:
@@ -25,7 +26,8 @@ async def ask(request: AskRequest, request_: Request):
             question=context + request.question,
             car=request.car,
             engine=request.engine,
-            notes=request.notes
+            notes=request.notes,
+            unit_preferences=request.unit_preferences
         )
         audio_url = call_elevenlabs_tts(answer)
         log_query(request.user_id, request.question, answer)
@@ -44,11 +46,20 @@ async def stt(file: UploadFile = File(...), request: Request = None):
     try:
         audio_bytes = file.file.read()
         import requests
+
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}"
+        }
+
+        # Add organization and project headers if available
+        if OPENAI_ORGANIZATION:
+            headers["OpenAI-Organization"] = OPENAI_ORGANIZATION
+        if OPENAI_PROJECT:
+            headers["OpenAI-Project"] = OPENAI_PROJECT
+
         response = requests.post(
             "https://api.openai.com/v1/audio/transcriptions",
-            headers={
-                "Authorization": f"Bearer [MASKED]"
-            },
+            headers=headers,
             files={
                 "file": (file.filename, audio_bytes, file.content_type),
                 "model": (None, "whisper-1")
@@ -65,28 +76,57 @@ async def stt(file: UploadFile = File(...), request: Request = None):
 
 @router.post("/tts", tags=["TTS"], summary="Text-to-speech", description="Convert text to speech using ElevenLabs API.")
 @require_api_key
-async def tts(text: str, request: Request = None):
+async def tts(
+    text: str,
+    request: Request = None,
+    stability: float = 0.75,
+    similarity_boost: float = 0.75,
+    style: float = 0.0,
+    use_speaker_boost: bool = False
+):
     if not ELEVENLABS_API_KEY:
         logger.error("ELEVENLABS_API_KEY not set")
         raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not set")
     try:
-        import requests
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_API_KEY}"
-        headers = {
-            "xi-api-key": "[MASKED]",
-            "Content-Type": "application/json"
+        from elevenlabs.client import ElevenLabs
+        import io
+
+        # Initialize the ElevenLabs client
+        client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+
+        # Prepare voice settings
+        voice_settings = {
+            "stability": max(0.0, min(1.0, stability)),  # Clamp between 0.0 and 1.0
+            "similarity_boost": max(0.0, min(1.0, similarity_boost)),  # Clamp between 0.0 and 1.0
+            "style": max(0.0, min(1.0, style)),  # Clamp between 0.0 and 1.0
+            "use_speaker_boost": use_speaker_boost
         }
-        payload = {
-            "text": text,
-            "model_id": "eleven_multilingual_v2",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.5}
-        }
-        resp = requests.post(url, headers=headers, json=payload, stream=True)
-        if resp.status_code != 200:
-            logger.error(f"ElevenLabs API error: {resp.text}")
-            raise HTTPException(status_code=500, detail="ElevenLabs API error")
-        logger.info("TTS synthesis successful")
-        return StreamingResponse(resp.raw, media_type="audio/mpeg")
+
+        # Generate audio using the streaming method with voice settings
+        audio_generator = client.text_to_speech.stream(
+            text=text,
+            voice_id=ELEVENLABS_VOICE_ID,
+            model_id="eleven_flash_v2_5",  # Flash model for ultra-low latency
+            output_format="mp3_44100_128",
+            voice_settings=voice_settings
+        )
+
+        logger.info(f"TTS synthesis successful with settings: {voice_settings}")
+
+        # Create a BytesIO stream to collect audio data
+        audio_stream = io.BytesIO()
+
+        # Iterate through the generator and write chunks directly to stream
+        for chunk in audio_generator:
+            if chunk:
+                audio_stream.write(chunk)
+
+        # Reset stream position to beginning for reading
+        audio_stream.seek(0)
+
+        # Return the audio as a streaming response
+        return StreamingResponse(audio_stream, media_type="audio/mpeg")
+
     except Exception as e:
         logger.error(f"/tts error: {e}")
         raise HTTPException(status_code=500, detail="Failed to synthesize audio")
