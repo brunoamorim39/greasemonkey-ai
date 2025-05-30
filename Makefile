@@ -11,7 +11,7 @@ FRONTEND_IMAGE?=greasemonkey-frontend
 FRONTEND_TAG?=latest
 FRONTEND_PORT?=8080
 
-.PHONY: venv install dev dev-venv clean down backend-shell frontend-shell tools-install ingest-fsm test
+.PHONY: venv install dev dev-venv clean down backend-shell frontend-shell tools-install ingest-fsm test build-android
 
 # --- Docker Compose targets ---
 dev:
@@ -31,6 +31,11 @@ backend-shell:
 
 frontend-shell:
 	docker compose exec frontend /bin/sh
+
+# --- Mobile Build targets ---
+build-android:
+	@echo "🔨 Building Android APK locally..."
+	cd $(FRONTEND_DIR) && chmod +x build-android-local.sh && ./build-android-local.sh
 
 # --- Testing targets ---
 test: backend-test frontend-test

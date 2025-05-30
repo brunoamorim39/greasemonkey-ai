@@ -1,0 +1,75 @@
+# Flutter Android Build Environment
+FROM ubuntu:22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install basic dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    unzip \
+    xz-utils \
+    zip \
+    libglu1-mesa \
+    openjdk-17-jdk \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set JAVA_HOME
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+# Install Android SDK
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH=${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools
+
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip && \
+    unzip commandlinetools-linux-*_latest.zip -d ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    mv ${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools ${ANDROID_SDK_ROOT}/cmdline-tools/latest && \
+    rm commandlinetools-linux-*_latest.zip
+
+# Accept Android SDK licenses
+RUN yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses
+
+# Install Android SDK components
+RUN ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager \
+    "platform-tools" \
+    "platforms;android-34" \
+    "platforms;android-35" \
+    "build-tools;34.0.0" \
+    "build-tools;35.0.0" \
+    "ndk;27.0.12077973"
+
+# Create a non-root user for Flutter
+RUN useradd -m -u 1000 developer && \
+    chown -R developer:developer ${ANDROID_SDK_ROOT}
+
+# Install Flutter as root, then change ownership
+ENV FLUTTER_ROOT=/opt/flutter
+ENV PATH=${PATH}:${FLUTTER_ROOT}/bin
+
+RUN git clone https://github.com/flutter/flutter.git -b stable ${FLUTTER_ROOT} && \
+    chown -R developer:developer ${FLUTTER_ROOT}
+
+# Switch to non-root user
+USER developer
+
+# Configure Flutter
+RUN flutter config --android-sdk ${ANDROID_SDK_ROOT} && \
+    flutter doctor
+
+# Set up working directory
+WORKDIR /workspace
+
+# Copy Flutter project and set ownership
+COPY --chown=developer:developer . .
+
+# Get dependencies
+RUN flutter pub get
+
+# Verify setup
+RUN flutter doctor
+
+# Build APK
+CMD ["flutter", "build", "apk", "--release"]
