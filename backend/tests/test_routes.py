@@ -19,16 +19,17 @@ def test_health_check():
 
 def test_ask_endpoint_without_api_key():
     """Test that ask endpoint requires API key"""
-    response = client.post("/ask", json={
-        "question": "What's the oil capacity?",
-        "user_id": "test_user"
-    })
-    assert response.status_code == 401
+    with patch.dict(os.environ, {'API_KEY': 'test-key'}, clear=False):
+        response = client.post("/ask", json={
+            "question": "What's the oil capacity?",
+            "user_id": "test_user"
+        })
+        assert response.status_code == 401
 
 
 def test_ask_endpoint_with_invalid_api_key():
     """Test ask endpoint with invalid API key"""
-    with patch.dict(os.environ, {'API_KEY': 'valid-key'}):
+    with patch.dict(os.environ, {'API_KEY': 'valid-key'}, clear=False):
         response = client.post("/ask",
             json={
                 "question": "What's the oil capacity?",
@@ -46,7 +47,7 @@ def test_ask_endpoint_success(mock_retrieve_fsm, mock_call_gpt4o):
     mock_retrieve_fsm.return_value = "4.5 quarts with filter"
     mock_call_gpt4o.return_value = "The oil capacity is 4.5 quarts with filter."
 
-    with patch.dict(os.environ, {'API_KEY': 'test-key'}):
+    with patch.dict(os.environ, {'API_KEY': 'test-key'}, clear=False):
         response = client.post("/ask",
             json={
                 "question": "What's the oil capacity?",
@@ -63,14 +64,16 @@ def test_ask_endpoint_success(mock_retrieve_fsm, mock_call_gpt4o):
 
 def test_stt_endpoint_without_api_key():
     """Test that STT endpoint requires API key"""
-    response = client.post("/stt")
-    assert response.status_code == 401
+    with patch.dict(os.environ, {'API_KEY': 'test-key'}, clear=False):
+        response = client.post("/stt")
+        assert response.status_code == 401
 
 
 def test_tts_endpoint_without_api_key():
     """Test that TTS endpoint requires API key"""
-    response = client.post("/tts", params={"text": "test"})
-    assert response.status_code == 401
+    with patch.dict(os.environ, {'API_KEY': 'test-key', 'ELEVENLABS_API_KEY': 'test-eleven'}, clear=False):
+        response = client.post("/tts", params={"text": "test"})
+        assert response.status_code == 401
 
 
 @patch('routes.call_elevenlabs_tts')
@@ -78,7 +81,7 @@ def test_tts_endpoint_success(mock_tts):
     """Test successful TTS endpoint"""
     mock_tts.return_value = "/tts?text=hello%20world"
 
-    with patch.dict(os.environ, {'API_KEY': 'test-key'}):
+    with patch.dict(os.environ, {'API_KEY': 'test-key', 'ELEVENLABS_API_KEY': 'test-eleven'}, clear=False):
         response = client.post("/tts",
             params={"text": "hello world"},
             headers={"x-api-key": "test-key"}

@@ -1,5 +1,6 @@
 import os
 import logging
+import requests
 from functools import wraps
 from fastapi import Request, HTTPException
 from langchain_openai import OpenAIEmbeddings
@@ -73,7 +74,6 @@ def retrieve_fsm(query: str, car=None):
     return None
 
 def call_gpt4o(question: str, car=None, engine=None, notes=None):
-    import requests
     if not OPENAI_API_KEY:
         return "OPENAI_API_KEY not set"
     system_prompt = "You are GreaseMonkey AI, an expert automotive assistant. Answer concisely and accurately."
