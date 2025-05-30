@@ -6,12 +6,31 @@ allprojects {
 }
 
 subprojects {
-    // Configure Kotlin for all subprojects
-    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-        kotlinOptions {
-            jvmTarget = "17"
-            languageVersion = "1.8"
-            apiVersion = "1.8"
+    // Configure JVM Toolchain for all subprojects
+    afterEvaluate {
+        if (project.hasProperty("android")) {
+            extensions.findByType<com.android.build.gradle.BaseExtension>()?.apply {
+                compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_11
+                    targetCompatibility = JavaVersion.VERSION_11
+                }
+            }
+        }
+
+        // Configure Kotlin for all subprojects
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+            kotlinOptions {
+                jvmTarget = "11"
+                languageVersion = "1.8"
+                apiVersion = "1.8"
+            }
+        }
+
+        // Configure Java toolchain if available
+        extensions.findByType<JavaPluginExtension>()?.apply {
+            toolchain {
+                languageVersion.set(JavaLanguageVersion.of(11))
+            }
         }
     }
 }
