@@ -486,6 +486,32 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  Future<void> _discardRecording() async {
+    if (!_isRecording) return;
+
+    try {
+      // Stop the recording without processing it
+      await _audioService!.stopRecording();
+      setState(() => _isRecording = false);
+
+      // Show a brief confirmation
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recording discarded'),
+            duration: Duration(seconds: 1),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
+      debugPrint('Recording discarded by user');
+    } catch (e) {
+      setState(() => _isRecording = false);
+      debugPrint('Error discarding recording: $e');
+    }
+  }
+
   Future<void> _playTTS(String audioUrl) async {
     // Refresh audio settings to get the latest playback speed
     await _loadAudioSettings();
@@ -743,33 +769,61 @@ class _MainScreenState extends State<MainScreen> {
           margin: const EdgeInsets.only(bottom: 16, top: 8),
           child: Column(
             children: [
-              // Main microphone button
-              GestureDetector(
-                onTap: _isLoading ? null : _onMainButtonPressed,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: _isLoading ? Colors.grey : buttonColor,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      if (_isRecording || _isListening)
-                        BoxShadow(
-                          color: buttonColor.withValues(alpha: 0.5),
-                          blurRadius: 16,
-                          spreadRadius: 2,
+              // Main microphone button with optional trash icon
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Trash can icon (only show when recording in PTT mode)
+                  if (appState.isPushToTalkMode && _isRecording && !_isLoading)
+                    Container(
+                      margin: const EdgeInsets.only(right: 20),
+                      child: GestureDetector(
+                        onTap: _discardRecording,
+                        child: Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withValues(alpha: 0.8),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.grey, width: 2),
+                          ),
+                          child: const Icon(
+                            Icons.delete_outline,
+                            size: 24,
+                            color: Colors.white,
+                          ),
                         ),
-                    ],
+                      ),
+                    ),
+                  // Main microphone button
+                  GestureDetector(
+                    onTap: _isLoading ? null : _onMainButtonPressed,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: _isLoading ? Colors.grey : buttonColor,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          if (_isRecording || _isListening)
+                            BoxShadow(
+                              color: buttonColor.withValues(alpha: 0.5),
+                              blurRadius: 16,
+                              spreadRadius: 2,
+                            ),
+                        ],
+                      ),
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Icon(
+                              iconData,
+                              size: 40,
+                              color: Colors.white,
+                            ),
+                    ),
                   ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Icon(
-                          iconData,
-                          size: 40,
-                          color: Colors.white,
-                        ),
-                ),
+                ],
               ),
               const SizedBox(height: 12),
               // Compact mode toggle

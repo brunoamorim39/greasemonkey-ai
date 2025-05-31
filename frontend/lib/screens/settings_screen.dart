@@ -4,6 +4,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../state/app_state.dart';
 import '../services/sentry_feedback_service.dart';
+import '../services/sentry_user_service.dart';
+import 'signup_screen.dart';
+import '../models/vehicle.dart';
+import 'vehicle_edit_screen.dart';
+import 'document_library_screen.dart';
+import 'document_upload_screen.dart';
+import '../services/api_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -72,7 +79,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear Query History'),
+        title: const Text('Clear Conversation History'),
         content: const Text(
           'This will permanently delete all your saved questions and responses. This action cannot be undone.',
         ),
@@ -244,18 +251,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     secondary: const Icon(Icons.play_circle_fill),
                     contentPadding: EdgeInsets.zero,
                   ),
-                  SwitchListTile(
-                    title: const Text('Push to Talk Mode'),
-                    subtitle: Text(appState.isPushToTalkMode
-                        ? 'Tap to record, tap again to send'
-                        : 'Use wake word "Hey GreaseMonkey" to activate'),
-                    value: appState.isPushToTalkMode,
-                    onChanged: (v) {
-                      appState.togglePushToTalkMode();
-                    },
-                    secondary: Icon(appState.isPushToTalkMode ? Icons.push_pin : Icons.hearing),
-                    contentPadding: EdgeInsets.zero,
-                  ),
                 ],
               ),
             ),
@@ -288,6 +283,105 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
 
+          // Document Management Section (NEW)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Documents',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    leading: const Icon(Icons.folder),
+                    title: const Text('Manage Documents'),
+                    subtitle: const Text('Upload, view, and manage your service manuals'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const DocumentLibraryScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  // Storage info widget
+                  FutureBuilder<Map<String, dynamic>?>(
+                    future: appState.userId != null
+                        ? ApiService.getUserDocumentStats(appState.userId!)
+                        : null,
+                    builder: (context, snapshot) {
+                      if (snapshot.hasData && snapshot.data != null) {
+                        final stats = snapshot.data!;
+                        final storageUsedMb = (stats['storage_used_mb'] as num).toDouble();
+                        final maxStorageMb = (stats['max_storage_mb'] as num).toDouble();
+                        final usagePercent = maxStorageMb > 0 ? (storageUsedMb / maxStorageMb * 100) : 0.0;
+
+                        return Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.storage,
+                                    size: 16,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Storage: ${storageUsedMb.toStringAsFixed(1)} MB / ${maxStorageMb.toStringAsFixed(0)} MB',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    '${usagePercent.toStringAsFixed(1)}%',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: usagePercent > 80 ? Colors.orange : Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              LinearProgressIndicator(
+                                value: usagePercent / 100,
+                                backgroundColor: Colors.grey[300],
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  usagePercent > 90 ? Colors.red :
+                                  usagePercent > 80 ? Colors.orange :
+                                  Colors.blue,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // Data & Privacy Section
           Card(
             child: Padding(
@@ -302,7 +396,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: 12),
                   ListTile(
                     leading: const Icon(Icons.history),
-                    title: const Text('Clear Query History'),
+                    title: const Text('Clear Conversation History'),
                     subtitle: const Text('Remove all saved queries and responses'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     contentPadding: EdgeInsets.zero,

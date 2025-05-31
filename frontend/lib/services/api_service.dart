@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../state/app_state.dart';
+import '../models/document.dart';
 
 class ApiService {
   static String get backendUrl => dotenv.env['BACKEND_URL'] ?? 'http://localhost:8000';
@@ -65,9 +66,56 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return json.decode(response.body);
+      final data = json.decode(response.body);
+
+      // Parse document sources from the response
+      final answer = data['answer'] as String;
+      final sources = DocumentSource.parseFromResponse(answer);
+
+      // Return enhanced response with sources
+      return {
+        'answer': answer,
+        'audio_url': data['audio_url'],
+        'sources': sources.map((s) => {
+          'title': s.title,
+          'type': s.type.value,
+          'relevance_score': s.relevanceScore,
+          'snippet': s.snippet,
+        }).toList(),
+      };
     } else {
       return null;
+    }
+  }
+
+  /// Get user's document statistics for display in UI
+  static Future<Map<String, dynamic>?> getUserDocumentStats(String userId) async {
+    try {
+      final uri = Uri.parse('$backendUrl/documents/stats/$userId');
+      final response = await http.get(
+        uri,
+        headers: {
+          'x-api-key': apiKey,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error getting user document stats: $e');
+      return null;
+    }
+  }
+
+  /// Check if user has uploaded documents (for UI hints)
+  static Future<bool> userHasDocuments(String userId) async {
+    try {
+      final stats = await getUserDocumentStats(userId);
+      return stats != null && (stats['total_documents'] as int) > 0;
+    } catch (e) {
+      return false;
     }
   }
 }
