@@ -1,5 +1,6 @@
 from pydantic import BaseModel, field_validator
-from typing import Optional, Dict
+from typing import Optional, Dict, List
+from datetime import datetime
 
 class UnitPreferences(BaseModel):
     # Torque measurements
@@ -41,3 +42,56 @@ class AskRequest(BaseModel):
 class AskResponse(BaseModel):
     answer: str
     audio_url: Optional[str] = None
+
+class BugReport(BaseModel):
+    id: Optional[str] = None
+    user_id: str
+    title: str
+    description: str
+    category: str
+    severity: str
+    vehicle_info: Optional[str] = None
+    steps_to_reproduce: List[str] = []
+    expected_behavior: Optional[str] = None
+    actual_behavior: Optional[str] = None
+    status: str = "open"
+    admin_response: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    @field_validator('user_id', 'title', 'description', 'category', 'severity')
+    @classmethod
+    def validate_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Field cannot be empty')
+        return v
+
+class FeatureRequest(BaseModel):
+    id: Optional[str] = None
+    user_id: str
+    title: str
+    description: str
+    category: str
+    priority: str
+    use_case: Optional[str] = None
+    current_workaround: Optional[str] = None
+    vote_count: int = 0
+    status: str = "submitted"
+    admin_response: Optional[str] = None
+    estimated_timeframe: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    @field_validator('user_id', 'title', 'description', 'category', 'priority')
+    @classmethod
+    def validate_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Field cannot be empty')
+        return v
+
+class FeedbackStats(BaseModel):
+    bug_reports: Dict[str, int]
+    feature_requests: Dict[str, int]
+    total_bugs: int
+    total_features: int
+    total_votes: int

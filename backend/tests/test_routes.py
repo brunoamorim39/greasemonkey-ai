@@ -85,6 +85,31 @@ def test_tts_endpoint_without_api_key():
             assert response.status_code == 401
 
 
+def test_tts_endpoint_text_too_long():
+    """Test that TTS endpoint validates text length"""
+    long_text = "a" * 5001  # Exceeds 5000 character limit
+    with patch('services.API_KEY', 'test-key'):
+        with patch('routes.ELEVENLABS_API_KEY', 'test-eleven'):
+            response = client.post("/tts",
+                params={"text": long_text},
+                headers={"x-api-key": "test-key"}
+            )
+            assert response.status_code == 400
+            assert "Text too long for TTS" in response.json()["detail"]
+
+
+def test_tts_endpoint_empty_text():
+    """Test that TTS endpoint validates empty text"""
+    with patch('services.API_KEY', 'test-key'):
+        with patch('routes.ELEVENLABS_API_KEY', 'test-eleven'):
+            response = client.post("/tts",
+                params={"text": "   "},  # Only whitespace
+                headers={"x-api-key": "test-key"}
+            )
+            assert response.status_code == 400
+            assert "Text cannot be empty" in response.json()["detail"]
+
+
 @patch('requests.post')  # Patch requests.post directly instead of routes.requests
 def test_tts_endpoint_success(mock_requests_post):
     """Test successful TTS endpoint"""

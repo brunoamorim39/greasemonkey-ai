@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/vehicle.dart';
 import '../services/vehicle_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/sentry_user_service.dart';
 
 class UnitPreferences {
   // Torque measurements
@@ -321,10 +323,22 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void setActiveVehicle(Vehicle vehicle) {
+  void setActiveVehicle(Vehicle vehicle) async {
     _activeVehicle = vehicle;
     _initializePaginationForVehicle(vehicle);
-    _saveActiveVehicle(vehicle);
+
+    // Update Sentry context with new active vehicle
+    SentryUserService.setVehicleContext({
+      'name': vehicle.name,
+      'engine': vehicle.engine,
+      'nickname': vehicle.nickname,
+      'has_notes': vehicle.notes.isNotEmpty,
+    });
+
+    // Save the active vehicle
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('active_vehicle_id', _getVehicleId(vehicle));
+
     notifyListeners();
   }
 
@@ -379,10 +393,24 @@ class AppState extends ChangeNotifier {
 
   void setUserId(String userId) {
     _userId = userId;
-    // Load vehicles when user ID is set
+
+    // Set Sentry user context when user logs in
     if (userId.isNotEmpty) {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        SentryUserService.setUser(user);
+
+        // Set app context
+        SentryUserService.setAppStateContext(
+          isPushToTalkMode: _isPushToTalkMode,
+          totalVehicles: _vehicles.length,
+          activeVehicle: _activeVehicle?.name,
+        );
+      }
       loadVehicles();
     } else {
+      // Clear user context when user logs out
+      SentryUserService.clearUser();
       // Clear vehicles when user logs out
       _vehicles.clear();
       _activeVehicle = null;

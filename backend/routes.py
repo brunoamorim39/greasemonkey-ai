@@ -84,6 +84,18 @@ async def tts(
     style: float = 0.0,
     use_speaker_boost: bool = False
 ):
+    # Validate text length to prevent extremely long TTS requests
+    MAX_TTS_LENGTH = 5000  # ElevenLabs has a 5000 character limit per request
+    if len(text) > MAX_TTS_LENGTH:
+        logger.warning(f"TTS text too long: {len(text)} characters (max: {MAX_TTS_LENGTH})")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Text too long for TTS. Maximum {MAX_TTS_LENGTH} characters allowed, got {len(text)} characters."
+        )
+
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
     if not ELEVENLABS_API_KEY:
         logger.error("ELEVENLABS_API_KEY not set")
         raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not set")

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart' as provider_pkg;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'state/app_state.dart';
 import 'models/vehicle.dart';
 import 'screens/main_screen.dart';
@@ -33,7 +34,19 @@ SUPABASE_ANON_KEY=your-anon-key-here
     anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? 'your-anon-key-here',
   );
 
-  runApp(const GreaseMonkeyApp());
+  // Initialize and run app with Sentry
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = dotenv.env['SENTRY_DSN']; // Will be null if not set
+      options.tracesSampleRate = 0.1;
+      options.debug = dotenv.env['ENVIRONMENT'] == 'development';
+      options.enableAutoPerformanceTracing = true;
+      options.attachScreenshot = true;
+      options.attachViewHierarchy = true;
+      options.enableUserInteractionTracing = true;
+    },
+    appRunner: () => runApp(const GreaseMonkeyApp()),
+  );
 }
 
 class GreaseMonkeyApp extends StatelessWidget {
@@ -47,24 +60,31 @@ class GreaseMonkeyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'GreaseMonkey AI',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepOrange,
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-        ),
+        theme: _buildTheme(),
+        routes: _buildRoutes(),
         debugShowCheckedModeBanner: false,
-        initialRoute: '/',
-        routes: {
-          '/': (context) => const LaunchScreen(),
-          '/main': (context) => const MainScreen(),
-          '/garage': (context) => const GarageDashboard(),
-          '/signup': (context) => const SignupScreen(),
-          '/settings': (context) => const SettingsScreen(),
-        },
       ),
     );
+  }
+
+  ThemeData _buildTheme() {
+    return ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: Colors.deepOrange,
+        brightness: Brightness.dark,
+      ),
+      useMaterial3: true,
+    );
+  }
+
+  Map<String, WidgetBuilder> _buildRoutes() {
+    return {
+      '/': (context) => const LaunchScreen(),
+      '/main': (context) => const MainScreen(),
+      '/garage': (context) => const GarageDashboard(),
+      '/signup': (context) => const SignupScreen(),
+      '/settings': (context) => const SettingsScreen(),
+    };
   }
 }
 

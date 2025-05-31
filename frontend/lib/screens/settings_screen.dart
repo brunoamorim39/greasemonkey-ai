@@ -3,6 +3,7 @@ import 'package:provider/provider.dart' as provider_pkg;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../state/app_state.dart';
+import '../services/sentry_feedback_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -98,6 +99,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
     }
+  }
+
+  void _showFeedbackOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'How can we help?',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.bug_report, color: Colors.red),
+              title: const Text('Report a Bug'),
+              subtitle: const Text('Something not working right?'),
+              onTap: () {
+                Navigator.pop(context);
+                _showFeedback(context, 'bug');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.lightbulb, color: Colors.orange),
+              title: const Text('Suggest a Feature'),
+              subtitle: const Text('Got an idea to make us better?'),
+              onTap: () {
+                Navigator.pop(context);
+                _showFeedback(context, 'suggestion');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.chat, color: Colors.blue),
+              title: const Text('General Feedback'),
+              subtitle: const Text('Tell us what you think'),
+              onTap: () {
+                Navigator.pop(context);
+                _showFeedback(context, 'feedback');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFeedback(BuildContext context, String type) {
+    SentryFeedbackService.showFeedbackDialog(context);
   }
 
   @override
@@ -282,27 +333,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     contentPadding: EdgeInsets.zero,
                   ),
                   ListTile(
-                    leading: const Icon(Icons.lightbulb_outline),
-                    title: const Text('Request a Feature'),
-                    subtitle: const Text('Suggest new features or improvements'),
+                    leading: const Icon(Icons.feedback),
+                    title: const Text('Send Feedback'),
+                    subtitle: const Text('Report bugs or suggest improvements'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     contentPadding: EdgeInsets.zero,
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Feature request feature coming soon!')),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.bug_report),
-                    title: const Text('Report a Bug'),
-                    subtitle: const Text('Help us improve the app'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    contentPadding: EdgeInsets.zero,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Bug reporting feature coming soon!')),
-                      );
+                      SentryFeedbackService.showFeedbackDialog(context);
                     },
                   ),
                 ],

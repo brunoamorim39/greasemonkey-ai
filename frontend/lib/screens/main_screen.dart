@@ -42,6 +42,9 @@ class _MainScreenState extends State<MainScreen> {
   // Helper to check if platform needs explicit permission handling
   bool get _needsExplicitPermissions => !kIsWeb && !Platform.isMacOS;
 
+  // Helper to check if wake word detection is supported on this platform
+  bool get _isWakeWordSupported => !kIsWeb && !Platform.isWindows && !Platform.isMacOS;
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +63,15 @@ class _MainScreenState extends State<MainScreen> {
         _audioPlayer.setSpeed(_playbackSpeed).catchError((error) {
           debugPrint('Error setting playback speed: $error');
         });
+      }
+
+      // Handle TTS playback completion or stopping
+      if (_isPlayingTTS) {
+        if (state.processingState == ProcessingState.completed ||
+            (!state.playing && state.processingState == ProcessingState.ready)) {
+          debugPrint('TTS playback completed or stopped');
+          setState(() => _isPlayingTTS = false);
+        }
       }
     });
   }
@@ -183,6 +195,17 @@ class _MainScreenState extends State<MainScreen> {
 
   void _initializeListeningMode() {
     final appState = Provider.of<AppState>(context, listen: false);
+
+    // If wake word is not supported on this platform, ensure we're in push-to-talk mode
+    if (!_isWakeWordSupported) {
+      if (!appState.isPushToTalkMode) {
+        debugPrint('🔄 Auto-switching to push-to-talk mode - wake word not supported on this platform');
+        appState.togglePushToTalkMode();
+      }
+      return;
+    }
+
+    // Only start wake word listening if it's supported and we're not in push-to-talk mode
     if (!appState.isPushToTalkMode) {
       _startWakeWordListening();
     }
@@ -250,6 +273,11 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
 
+    // Force push-to-talk mode on unsupported platforms
+    if (!_isWakeWordSupported && !appState.isPushToTalkMode) {
+      appState.togglePushToTalkMode();
+    }
+
     if (appState.isPushToTalkMode) {
       // In PTT mode, this button records audio
       if (!_isRecording) {
@@ -258,7 +286,7 @@ class _MainScreenState extends State<MainScreen> {
         await _stopRecordingAndQuery();
       }
     } else {
-      // In wake word mode, this button toggles listening
+      // In wake word mode, this button toggles listening (only on supported platforms)
       if (_isListening) {
         await _stopWakeWordListening();
       } else {
@@ -355,6 +383,13 @@ class _MainScreenState extends State<MainScreen> {
     if (!_recorderInitialized || _audioService == null) {
       _showError('Microphone not available. Please check permissions.');
       return;
+    }
+
+    // Stop any currently playing TTS audio
+    if (_isPlayingTTS) {
+      await _audioPlayer.stop();
+      setState(() => _isPlayingTTS = false);
+      debugPrint('Stopped TTS playback to start recording');
     }
 
     try {
@@ -486,6 +521,11 @@ class _MainScreenState extends State<MainScreen> {
           await tempFile.writeAsBytes(audioBytes);
           audioStreamUrl = tempFile.path;
           debugPrint('TTS audio saved to: $audioStreamUrl');
+        } else if (response.statusCode == 400) {
+          // Handle validation errors (e.g., text too long)
+          final errorBody = response.body;
+          debugPrint('TTS validation error: $errorBody');
+          throw Exception('TTS validation error: ${errorBody.contains('too long') ? 'Response too long for voice synthesis' : errorBody}');
         } else {
           throw Exception('TTS request failed with status ${response.statusCode}: ${response.body}');
         }
@@ -514,6 +554,7 @@ class _MainScreenState extends State<MainScreen> {
 
     } catch (e) {
       debugPrint('Error playing TTS: $e');
+      setState(() => _isPlayingTTS = false);
       if (e.toString().contains('no longer available')) {
         _showError('Audio no longer available - try asking the question again');
       } else if (e.toString().contains('timeout') || e.toString().contains('Timeout')) {
@@ -522,7 +563,8 @@ class _MainScreenState extends State<MainScreen> {
         _showError('Failed to play audio: $e');
       }
     }
-    setState(() => _isPlayingTTS = false);
+    // Note: Don't set _isPlayingTTS = false here immediately
+    // We'll listen to the player state stream to know when playback actually completes
   }
 
   Future<void> _setupAndStartAudio(String audioPath) async {
@@ -695,6 +737,7 @@ class _MainScreenState extends State<MainScreen> {
         }
 
         final bool showPermissionWarning = !_permissionGranted && _needsExplicitPermissions;
+        final bool isWakeWordDisabled = !_isWakeWordSupported || showPermissionWarning;
 
         return Container(
           margin: const EdgeInsets.only(bottom: 16, top: 8),
@@ -743,7 +786,7 @@ class _MainScreenState extends State<MainScreen> {
                     Icon(
                       appState.isPushToTalkMode ? Icons.push_pin : Icons.hearing,
                       size: 16,
-                      color: showPermissionWarning ? Colors.grey : Theme.of(context).primaryColor,
+                      color: isWakeWordDisabled ? Colors.grey : Theme.of(context).primaryColor,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -751,7 +794,7 @@ class _MainScreenState extends State<MainScreen> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: showPermissionWarning ? Colors.grey : null,
+                        color: isWakeWordDisabled ? Colors.grey : null,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -759,7 +802,7 @@ class _MainScreenState extends State<MainScreen> {
                       scale: 0.7,
                       child: Switch(
                         value: !appState.isPushToTalkMode,
-                        onChanged: !showPermissionWarning ? (value) async {
+                        onChanged: !isWakeWordDisabled ? (value) async {
                           appState.togglePushToTalkMode();
                           if (!appState.isPushToTalkMode) {
                             await _startWakeWordListening();
@@ -783,6 +826,18 @@ class _MainScreenState extends State<MainScreen> {
                       fontSize: 10,
                       color: Colors.red.withValues(alpha: 0.8),
                     ),
+                  ),
+                )
+              else if (!_isWakeWordSupported)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Wake word not supported on ${Platform.isWindows ? 'Windows' : Platform.isMacOS ? 'macOS' : 'this platform'}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.orange.withValues(alpha: 0.9),
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
             ],
