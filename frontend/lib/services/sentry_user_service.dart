@@ -18,21 +18,21 @@ class SentryUserService {
   /// Clear Sentry user context when user logs out
   static void clearUser() {
     Sentry.configureScope((scope) {
-      scope.removeUser();
+      scope.setUser(null);
     });
   }
 
   /// Add additional context for better debugging
   static void setContext(String key, Map<String, dynamic> context) {
     Sentry.configureScope((scope) {
-      scope.setContext(key, context);
+      scope.setContexts(key, context);
     });
   }
 
   /// Remove context
   static void removeContext(String key) {
     Sentry.configureScope((scope) {
-      scope.removeContext(key);
+      scope.removeContexts(key);
     });
   }
 

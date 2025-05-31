@@ -34,19 +34,25 @@ SUPABASE_ANON_KEY=your-anon-key-here
     anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? 'your-anon-key-here',
   );
 
-  // Initialize and run app with Sentry
-  await SentryFlutter.init(
-    (options) {
-      options.dsn = dotenv.env['SENTRY_DSN']; // Will be null if not set
-      options.tracesSampleRate = 0.1;
-      options.debug = dotenv.env['ENVIRONMENT'] == 'development';
-      options.enableAutoPerformanceTracing = true;
-      options.attachScreenshot = true;
-      options.attachViewHierarchy = true;
-      options.enableUserInteractionTracing = true;
-    },
-    appRunner: () => runApp(const GreaseMonkeyApp()),
-  );
+  // Initialize Sentry only if DSN is provided
+  final sentryDsn = dotenv.env['SENTRY_DSN'];
+  if (sentryDsn != null && sentryDsn.isNotEmpty) {
+    await SentryFlutter.init(
+      (options) {
+        options.dsn = sentryDsn;
+        options.tracesSampleRate = 0.1;
+        options.debug = dotenv.env['ENVIRONMENT'] == 'development';
+        options.enableAutoPerformanceTracing = true;
+        options.attachScreenshot = true;
+        options.attachViewHierarchy = true;
+        options.enableUserInteractionTracing = true;
+      },
+      appRunner: () => runApp(const GreaseMonkeyApp()),
+    );
+  } else {
+    print('Sentry DSN not provided, skipping Sentry initialization');
+    runApp(const GreaseMonkeyApp());
+  }
 }
 
 class GreaseMonkeyApp extends StatelessWidget {

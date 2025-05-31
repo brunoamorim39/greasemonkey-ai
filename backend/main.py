@@ -10,7 +10,7 @@ SENTRY_DSN = os.getenv("SENTRY_DSN")
 if SENTRY_DSN:
     sentry_sdk.init(
         dsn=SENTRY_DSN,
-        integrations=[FastApiIntegration(auto_enabling=True)],
+        integrations=[FastApiIntegration()],
         traces_sample_rate=0.1,
         environment=os.getenv("ENVIRONMENT", "development")
     )

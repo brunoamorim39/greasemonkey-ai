@@ -1,24 +1,217 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 class SentryFeedbackService {
-  /// Show Sentry User Feedback dialog
+  /// Shows the Sentry User Feedback dialog
   static Future<void> showFeedbackDialog(BuildContext context) async {
-    final user = Sentry.currentUser;
+    try {
+      // Check if Sentry is initialized
+      if (!_isSentryInitialized()) {
+        await _showFallbackFeedbackDialog(context);
+        return;
+      }
 
-    // Create a simple feedback form
-    final result = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (context) => const _FeedbackDialog(),
-    );
+      // Show a custom dialog for mobile (since Sentry's web widget doesn't work well on mobile)
+      await _showMobileFeedbackDialog(context);
 
-    if (result != null && result['feedback'] != null) {
-      await _submitFeedback(
-        feedback: result['feedback']!,
-        email: result['email'] ?? user?.email ?? '',
-        name: result['name'] ?? user?.username ?? '',
-      );
+    } catch (e) {
+      print('Error in showFeedbackDialog: $e');
+      // Fallback to a simple dialog
+      try {
+        await _showFallbackFeedbackDialog(context);
+      } catch (fallbackError) {
+        print('Error showing fallback dialog: $fallbackError');
+      }
     }
+  }
+
+  /// Check if Sentry is properly initialized
+  static bool _isSentryInitialized() {
+    try {
+      // Try to check if Sentry Hub is configured
+      // This is a more reliable way to check if Sentry is initialized
+      return Sentry.isEnabled;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Shows a mobile-optimized feedback dialog that integrates with Sentry
+  static Future<void> _showMobileFeedbackDialog(BuildContext context) async {
+    final nameController = TextEditingController();
+    final emailController = TextEditingController();
+    final commentsController = TextEditingController();
+
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Send Feedback'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'We value your feedback! Please let us know about any issues or suggestions.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Name (Optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email (Optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: commentsController,
+                  decoration: const InputDecoration(
+                    labelText: 'Your feedback *',
+                    border: OutlineInputBorder(),
+                    hintText: 'Please describe the issue or suggestion...',
+                  ),
+                  maxLines: 4,
+                  textInputAction: TextInputAction.newline,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (commentsController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter your feedback'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+
+                try {
+                  // Capture an event to get an event ID
+                  final eventId = await Sentry.captureMessage(
+                    'User Feedback: ${commentsController.text.trim()}',
+                    level: SentryLevel.info,
+                  );
+
+                  // Create and send user feedback
+                  final feedback = SentryUserFeedback(
+                    eventId: eventId,
+                    name: nameController.text.trim().isEmpty
+                        ? 'Anonymous User'
+                        : nameController.text.trim(),
+                    email: emailController.text.trim().isEmpty
+                        ? 'noreply@greasemonkey.ai'
+                        : emailController.text.trim(),
+                    comments: commentsController.text.trim(),
+                  );
+
+                  await Sentry.captureUserFeedback(feedback);
+
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Thank you for your feedback!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } catch (e) {
+                  print('Error submitting feedback: $e');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Failed to send feedback. Please try again.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Send'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Fallback feedback dialog when Sentry is not available
+  static Future<void> _showFallbackFeedbackDialog(BuildContext context) async {
+    final commentsController = TextEditingController();
+
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Send Feedback'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Feedback system is currently unavailable. Your feedback is important to us!',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: commentsController,
+                decoration: const InputDecoration(
+                  labelText: 'Your feedback',
+                  border: OutlineInputBorder(),
+                  hintText: 'Please describe the issue or suggestion...',
+                ),
+                maxLines: 4,
+                textInputAction: TextInputAction.newline,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                // Copy feedback to clipboard as fallback
+                if (commentsController.text.trim().isNotEmpty) {
+                  Clipboard.setData(ClipboardData(text: commentsController.text.trim()));
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Feedback copied to clipboard. Please email it to support@greasemonkey.ai'),
+                      backgroundColor: Colors.blue,
+                      duration: Duration(seconds: 4),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter your feedback'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Copy to Clipboard'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// Submit feedback to Sentry
@@ -41,7 +234,7 @@ class SentryFeedbackService {
         'User Feedback: $feedback',
         level: SentryLevel.info,
         withScope: (scope) {
-          scope.setContext('feedback', {
+          scope.setContexts('feedback', {
             'type': 'user_feedback',
             'source': 'mobile_app',
             'user_email': email,
@@ -51,7 +244,6 @@ class SentryFeedbackService {
       );
     } catch (e) {
       // If Sentry submission fails, at least log it locally
-      debugPrint('Failed to submit feedback to Sentry: $e');
       rethrow;
     }
   }
@@ -71,153 +263,7 @@ class SentryFeedbackService {
         comments: feedback,
       ));
     } catch (e) {
-      debugPrint('Failed to capture feedback with context: $e');
+      rethrow;
     }
-  }
-}
-
-class _FeedbackDialog extends StatefulWidget {
-  const _FeedbackDialog();
-
-  @override
-  State<_FeedbackDialog> createState() => _FeedbackDialogState();
-}
-
-class _FeedbackDialogState extends State<_FeedbackDialog> {
-  final _feedbackController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _nameController = TextEditingController();
-  bool _isSubmitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Pre-fill with Sentry user data if available
-    final user = Sentry.currentUser;
-    if (user != null) {
-      _emailController.text = user.email ?? '';
-      _nameController.text = user.username ?? '';
-    }
-  }
-
-  @override
-  void dispose() {
-    _feedbackController.dispose();
-    _emailController.dispose();
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submitFeedback() async {
-    if (_feedbackController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter your feedback'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isSubmitting = true);
-
-    try {
-      final result = {
-        'feedback': _feedbackController.text.trim(),
-        'email': _emailController.text.trim(),
-        'name': _nameController.text.trim(),
-      };
-
-      Navigator.of(context).pop(result);
-
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Thank you! Your feedback has been sent.'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error sending feedback: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      setState(() => _isSubmitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Send Feedback'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Help us improve GreaseMonkey AI! Your feedback will be sent to our development team.',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _nameController,
-              enabled: !_isSubmitting,
-              decoration: const InputDecoration(
-                labelText: 'Name (Optional)',
-                hintText: 'Your name',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _emailController,
-              enabled: !_isSubmitting,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email (Optional)',
-                hintText: 'your@email.com',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _feedbackController,
-              enabled: !_isSubmitting,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'Feedback *',
-                hintText: 'Describe the issue, suggest a feature, or share your thoughts...',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'This feedback will be linked to your app usage data to help us debug issues.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _isSubmitting ? null : _submitFeedback,
-          child: _isSubmitting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Send Feedback'),
-        ),
-      ],
-    );
   }
 }

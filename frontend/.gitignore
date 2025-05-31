@@ -86,3 +86,5 @@ ServiceDefinitions.json # Obsolete
 
 # If you have a global .env at the root, you might want to ignore it there:
 # /.env
+
+sentry.properties
