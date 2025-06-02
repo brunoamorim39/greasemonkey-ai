@@ -41,12 +41,46 @@ COPY . .
 # If PICOVOICE_ACCESS_KEY is needed at build time, consider using --build-arg in docker-compose
 # COPY .env .env
 
-RUN flutter build web
+# Build web app with optimizations for PWA
+RUN flutter build web \
+    --web-renderer canvaskit \
+    --pwa-strategy offline-first \
+    --release \
+    --no-tree-shake-icons
 
 # Use a simple web server to serve the built files
 FROM nginx:alpine
 # Nginx by default serves on port 80. If you need 8080, you'd configure nginx
 # For simplicity, we'll map host 8080 to container 80.
 COPY --from=build /app/build/web /usr/share/nginx/html
-# EXPOSE 80 (nginx default, EXPOSE is documentation, actual port is mapped in docker-compose)
+
+# Copy custom nginx configuration for SPA routing
+COPY --from=build /app/nginx.conf /etc/nginx/conf.d/default.conf || echo "server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Handle client-side routing
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+        expires 1y;
+        add_header Cache-Control \"public, immutable\";
+    }
+
+    # Security headers
+    add_header X-Frame-Options \"SAMEORIGIN\" always;
+    add_header X-Content-Type-Options \"nosniff\" always;
+    add_header X-XSS-Protection \"1; mode=block\" always;
+}" > /etc/nginx/conf.d/default.conf
+
+# Remove default nginx config
+RUN rm -f /etc/nginx/conf.d/default.conf.default
+
+EXPOSE 80
+
 CMD ["nginx", "-g", "daemon off;"]

@@ -11,7 +11,7 @@ FRONTEND_IMAGE?=greasemonkey-frontend
 FRONTEND_TAG?=latest
 FRONTEND_PORT?=8080
 
-.PHONY: help install-deps clean build test run-backend stop-backend logs-backend run-app run-macos run-ios run-android run-web build-app build-macos build-ios build-android build-web flutter-clean flutter-deps
+.PHONY: help install-deps clean build test run-backend stop-backend logs-backend run-app run-macos run-ios run-android run-web run-web-local run-web-dev run-web-frontend-only build-app build-macos build-ios build-android build-web build-web-dev serve-web flutter-clean flutter-deps
 
 # Default target
 help: ## Show this help message
@@ -29,7 +29,14 @@ help: ## Show this help message
 	@echo "  run-macos       - Run Flutter app on macOS"
 	@echo "  run-ios         - Run Flutter app on iOS simulator"
 	@echo "  run-android     - Run Flutter app on Android emulator"
-	@echo "  run-web         - Run Flutter app on web"
+	@echo "  run-web         - Run Flutter app on web (basic)"
+	@echo ""
+	@echo "Web Development Commands:"
+	@echo "  run-web-local   - Run Flutter web locally with hot reload (port 8080)"
+	@echo "  run-web-dev     - Run full stack (backend + frontend) for web development"
+	@echo "  run-web-frontend-only - Run Flutter web frontend only (no backend)"
+	@echo "  build-web-dev   - Build web app for development (with source maps)"
+	@echo "  serve-web       - Build and serve web app with Python server"
 	@echo ""
 	@echo "Build Commands:"
 	@echo "  build-app DEVICE=<device> - Build Flutter app for specified device"
@@ -109,6 +116,28 @@ run-web: ## Run Flutter app on web
 	@echo "🌐 Running Flutter app on web..."
 	$(MAKE) run-app DEVICE=chrome
 
+run-web-local: ## Run Flutter web app locally with hot reload on port 8080
+	@echo "🌐 Starting Flutter web app locally with hot reload..."
+	@echo "🔥 Hot reload enabled - save files to see changes instantly"
+	@echo "📱 Mobile view: Add '?mobile=true' to URL"
+	@echo "🔗 Opening at: http://localhost:8080"
+	cd $(FRONTEND_DIR) && flutter run -d chrome --web-port $(FRONTEND_PORT) --web-hostname 0.0.0.0
+
+run-web-dev: ## Run Flutter web app in development mode with backend
+	@echo "🚀 Starting full web development environment..."
+	@echo "🔧 Backend will be available at: http://localhost:8000"
+	@echo "🌐 Frontend will be available at: http://localhost:8080"
+	$(MAKE) run-backend
+	@echo "⏳ Waiting for backend to start..."
+	@timeout /t 3 /nobreak >nul 2>&1 || sleep 3
+	$(MAKE) run-web-local
+
+run-web-frontend-only: ## Run Flutter web frontend only (no backend)
+	@echo "🌐 Starting Flutter web frontend only..."
+	@echo "⚠️  Backend features won't work without running backend separately"
+	@echo "🔗 Opening at: http://localhost:8080"
+	cd $(FRONTEND_DIR) && flutter run -d chrome --web-port $(FRONTEND_PORT) --web-hostname 0.0.0.0
+
 # Build Commands
 build-app: flutter-deps ## Build Flutter app for specified device (use DEVICE=<device>)
 	@echo "🔨 Building Flutter app for $(DEVICE)..."
@@ -129,6 +158,15 @@ build-android: ## Build Android APK
 build-web: ## Build web app
 	@echo "🌐 Building web app..."
 	cd $(FLUTTER_DIR) && flutter build web
+
+build-web-dev: ## Build web app for development (with source maps)
+	@echo "🔨 Building web app for development..."
+	cd $(FRONTEND_DIR) && flutter build web --debug --source-maps
+
+serve-web: build-web ## Build and serve web app locally with Python server
+	@echo "🌐 Building and serving web app..."
+	cd $(FRONTEND_DIR)/build/web && python -m http.server 8080
+	@echo "🔗 Web app available at: http://localhost:8080"
 
 # Full Stack Development (Backend + Frontend)
 dev-macos: ## Start backend and run macOS app

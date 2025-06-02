@@ -5,7 +5,8 @@ import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../services/audio_recording_service.dart';
-import '../services/wakeword_service.dart';
+import '../services/wakeword_service_web.dart'
+    if (dart.library.io) '../services/wakeword_service_mobile.dart';
 import '../state/app_state.dart';
 import 'query_history_screen.dart';
 import 'settings_screen.dart';
@@ -70,7 +71,8 @@ class _QueryScreenState extends State<QueryScreen> {
     if (success) {
       setState(() => _isRecording = true);
     } else {
-      _showError('Failed to start recording. Please check microphone permissions.');
+      _showError(
+          'Failed to start recording. Please check microphone permissions.');
     }
   }
 

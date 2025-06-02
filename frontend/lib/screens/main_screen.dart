@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' show File, Platform;
 import 'package:path_provider/path_provider.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/api_service.dart';
 import '../services/audio_recording_service.dart';
-import '../services/wakeword_service.dart';
+import '../services/usage_service.dart';
+import '../services/wakeword_service_web.dart'
+    if (dart.library.io) '../services/wakeword_service_mobile.dart';
 import '../state/app_state.dart';
 import '../models/vehicle.dart';
 import '../main.dart';
@@ -29,7 +32,6 @@ class _MainScreenState extends State<MainScreen> {
   bool _isPlayingTTS = false;
   AudioRecordingService? _audioService;
   String? _audioPath;
-  WakeWordService? _wakeWordService;
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isLoading = false;
   double _playbackSpeed = 1.0;
@@ -37,13 +39,20 @@ class _MainScreenState extends State<MainScreen> {
   bool _recorderInitialized = false;
   bool _permissionGranted = false;
   bool _permissionRequested = false;
+  WakeWordService? _wakeWordService;
   final ScrollController _scrollController = ScrollController();
 
+  // Web-specific additions
+  final TextEditingController _textController = TextEditingController();
+  final FocusNode _textFocusNode = FocusNode();
+  bool _showTextInput = kIsWeb;
+
   // Helper to check if platform needs explicit permission handling
-  bool get _needsExplicitPermissions => !kIsWeb && !Platform.isMacOS;
+  bool get _needsExplicitPermissions => !kIsWeb;
 
   // Helper to check if wake word detection is supported on this platform
-  bool get _isWakeWordSupported => !kIsWeb && !Platform.isWindows && !Platform.isMacOS;
+  bool get _isWakeWordSupported =>
+      kIsWeb || Platform.isAndroid || Platform.isIOS;
 
   @override
   void initState() {
@@ -55,6 +64,11 @@ class _MainScreenState extends State<MainScreen> {
 
     // Add scroll listener for lazy loading
     _scrollController.addListener(_onScroll);
+
+    // Web-specific keyboard shortcuts
+    if (kIsWeb) {
+      _setupWebKeyboardShortcuts();
+    }
 
     // Listen to audio player state changes to ensure proper speed setting
     _audioPlayer.playerStateStream.listen((state) {
@@ -68,7 +82,8 @@ class _MainScreenState extends State<MainScreen> {
       // Handle TTS playback completion or stopping
       if (_isPlayingTTS) {
         if (state.processingState == ProcessingState.completed ||
-            (!state.playing && state.processingState == ProcessingState.ready)) {
+            (!state.playing &&
+                state.processingState == ProcessingState.ready)) {
           debugPrint('TTS playback completed or stopped');
           setState(() => _isPlayingTTS = false);
         }
@@ -81,12 +96,12 @@ class _MainScreenState extends State<MainScreen> {
 
     // Check if recording is supported on this platform
     final isSupported = await _audioService!.isRecordingSupported();
-    if (!isSupported && Platform.isMacOS) {
+    if (!isSupported && !kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Welcome to macOS support! Audio recording is now supported using the improved record package.',
+              'Audio recording is supported on this platform.',
               style: TextStyle(color: Colors.white),
             ),
             backgroundColor: Colors.green,
@@ -199,7 +214,8 @@ class _MainScreenState extends State<MainScreen> {
     // If wake word is not supported on this platform, ensure we're in push-to-talk mode
     if (!_isWakeWordSupported) {
       if (!appState.isPushToTalkMode) {
-        debugPrint('🔄 Auto-switching to push-to-talk mode - wake word not supported on this platform');
+        debugPrint(
+            '🔄 Auto-switching to push-to-talk mode - wake word not supported on this platform');
         appState.togglePushToTalkMode();
       }
       return;
@@ -214,9 +230,9 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _audioService?.dispose();
-    _wakeWordService?.stop();
     _audioPlayer.dispose();
     _scrollController.dispose();
+    _wakeWordService?.dispose();
     super.dispose();
   }
 
@@ -224,7 +240,8 @@ class _MainScreenState extends State<MainScreen> {
     // Load more messages when scrolling near the top (for older messages)
     // Since reverse=true, scrolling up (towards older messages) means approaching maxScrollExtent
     if (_scrollController.hasClients &&
-        _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 &&
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
         _scrollController.position.maxScrollExtent > 0) {
       final appState = Provider.of<AppState>(context, listen: false);
       // Only load if not already loading and there are more messages
@@ -236,7 +253,8 @@ class _MainScreenState extends State<MainScreen> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients && _scrollController.position.maxScrollExtent > 0) {
+      if (_scrollController.hasClients &&
+          _scrollController.position.maxScrollExtent > 0) {
         _scrollController.animateTo(
           0.0, // In reverse mode, 0.0 is the bottom (newest messages)
           duration: const Duration(milliseconds: 300),
@@ -249,9 +267,11 @@ class _MainScreenState extends State<MainScreen> {
   // Add a method to force scroll to bottom after a delay to ensure content is rendered
   void _forceScrollToBottom() {
     Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients && _scrollController.position.maxScrollExtent > 0) {
+      if (_scrollController.hasClients &&
+          _scrollController.position.maxScrollExtent > 0) {
         // Only scroll if we're not in the middle of a user scroll gesture
-        final isUserScrolling = _scrollController.position.isScrollingNotifier.value;
+        final isUserScrolling =
+            _scrollController.position.isScrollingNotifier.value;
         if (!isUserScrolling) {
           _scrollController.animateTo(
             0.0, // In reverse mode, 0.0 is the bottom (newest messages)
@@ -296,78 +316,34 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _startWakeWordListening() async {
-    try {
-      debugPrint('Attempting to start wake word listening...');
-      setState(() => _isListening = true);
+    if (!_isWakeWordSupported || !_permissionGranted) return;
 
-      _wakeWordService = WakeWordService(onWakeWord: () async {
-        debugPrint('Wake word detected, stopping listening and starting recording');
-        setState(() => _isListening = false);
-        await _startRecording();
-      });
+    try {
+      _wakeWordService ??= WakeWordService(
+        onWakeWord: () {
+          debugPrint('🎯 Wake word detected, starting recording...');
+          _startRecording();
+        },
+      );
 
       await _wakeWordService!.start();
-
-      // Verify the service actually started successfully
-      if (_wakeWordService!.isInitialized) {
-        setState(() => _isListening = true);
-        debugPrint('✅ Wake word listening started successfully');
-      } else {
-        setState(() => _isListening = false);
-        debugPrint('⚠️ Wake word service created but not initialized');
-      }
-
+      setState(() => _isListening = true);
+      debugPrint('✅ Wake word listening started');
     } catch (e) {
-      setState(() => _isListening = false);
       debugPrint('❌ Failed to start wake word listening: $e');
-
-      // Show a helpful message to the user
-      if (context.mounted) {
-        String message;
-        Duration duration;
-        Color backgroundColor;
-
-        if (e.toString().contains('MissingPluginException') ||
-            e.toString().contains('No implementation found')) {
-          message = 'Wake word detection unavailable. Using push-to-talk mode.\n\nTip: Try completely uninstalling and reinstalling the app to fix this.';
-          duration = const Duration(seconds: 5);
-          backgroundColor = Colors.orange;
-        } else if (e.toString().contains('No Picovoice access key')) {
-          message = 'Wake word detection requires a Picovoice API key. Using push-to-talk mode.';
-          duration = const Duration(seconds: 3);
-          backgroundColor = Colors.blue;
-        } else {
-          message = 'Wake word detection failed. Using push-to-talk mode.';
-          duration = const Duration(seconds: 3);
-          backgroundColor = Colors.red;
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: duration,
-            backgroundColor: backgroundColor,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-
-        // Auto-switch to push-to-talk mode
-        final appState = Provider.of<AppState>(context, listen: false);
-        if (!appState.isPushToTalkMode) {
-          debugPrint('🔄 Auto-switching to push-to-talk mode due to wake word failure');
-          appState.togglePushToTalkMode();
-        }
-      }
+      setState(() => _isListening = false);
     }
   }
 
   Future<void> _stopWakeWordListening() async {
-    try {
-      await _wakeWordService?.stop();
-      setState(() => _isListening = false);
-    } catch (e) {
-      setState(() => _isListening = false);
-      debugPrint('Failed to stop wake word listening: $e');
+    if (_wakeWordService != null) {
+      try {
+        await _wakeWordService!.stop();
+        setState(() => _isListening = false);
+        debugPrint('🛑 Wake word listening stopped');
+      } catch (e) {
+        debugPrint('❌ Error stopping wake word listening: $e');
+      }
     }
   }
 
@@ -375,7 +351,8 @@ class _MainScreenState extends State<MainScreen> {
     if (!_permissionGranted) {
       _permissionGranted = await _audioService!.requestPermission();
       if (!_permissionGranted) {
-        _showError('Microphone permission not granted. Please enable it in settings.');
+        _showError(
+            'Microphone permission not granted. Please enable it in settings.');
         return;
       }
     }
@@ -397,7 +374,8 @@ class _MainScreenState extends State<MainScreen> {
       if (success) {
         setState(() => _isRecording = true);
       } else {
-        _showError('Failed to start recording. Please check microphone access.');
+        _showError(
+            'Failed to start recording. Please check microphone access.');
       }
     } catch (e) {
       _showError('Failed to start recording: $e');
@@ -457,7 +435,8 @@ class _MainScreenState extends State<MainScreen> {
       if (vehicle == null) {
         await appState.addQueryToHistory({
           'question': text,
-          'answer': 'Before I answer, which car is this for? (Please set an active vehicle in your garage.)',
+          'answer':
+              'Before I answer, which car is this for? (Please set an active vehicle in your garage.)',
           'audio_url': '',
         });
       } else {
@@ -467,6 +446,14 @@ class _MainScreenState extends State<MainScreen> {
           'answer': answer['answer'] ?? 'No answer',
           'audio_url': audioUrl,
         });
+
+        // Track usage for analytics and billing
+        await UsageService.trackQuestionUsage(
+          userId,
+          question: text,
+          vehicleId: vehicle.name,
+          hadAudio: true,
+        );
       }
 
       setState(() => _isLoading = false);
@@ -533,7 +520,8 @@ class _MainScreenState extends State<MainScreen> {
 
         // Make a POST request to the TTS endpoint with text as query parameter
         final response = await http.post(
-          Uri.parse('${ApiService.backendUrl}/tts?text=${Uri.encodeComponent(text)}'),
+          Uri.parse(
+              '${ApiService.backendUrl}/tts?text=${Uri.encodeComponent(text)}'),
           headers: {
             'x-api-key': ApiService.apiKey,
           },
@@ -543,7 +531,8 @@ class _MainScreenState extends State<MainScreen> {
           // Create a temporary audio file from the response bytes
           final audioBytes = response.bodyBytes;
           final tempDir = await getTemporaryDirectory();
-          final tempFile = File('${tempDir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.mp3');
+          final tempFile = File(
+              '${tempDir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.mp3');
           await tempFile.writeAsBytes(audioBytes);
           audioStreamUrl = tempFile.path;
           debugPrint('TTS audio saved to: $audioStreamUrl');
@@ -551,9 +540,11 @@ class _MainScreenState extends State<MainScreen> {
           // Handle validation errors (e.g., text too long)
           final errorBody = response.body;
           debugPrint('TTS validation error: $errorBody');
-          throw Exception('TTS validation error: ${errorBody.contains('too long') ? 'Response too long for voice synthesis' : errorBody}');
+          throw Exception(
+              'TTS validation error: ${errorBody.contains('too long') ? 'Response too long for voice synthesis' : errorBody}');
         } else {
-          throw Exception('TTS request failed with status ${response.statusCode}: ${response.body}');
+          throw Exception(
+              'TTS request failed with status ${response.statusCode}: ${response.body}');
         }
       } else {
         // Direct URL or local file path
@@ -563,7 +554,8 @@ class _MainScreenState extends State<MainScreen> {
         if (!audioStreamUrl.startsWith('http')) {
           final file = File(audioStreamUrl);
           if (!await file.exists()) {
-            throw Exception('Audio file no longer available (may have been cleaned up)');
+            throw Exception(
+                'Audio file no longer available (may have been cleaned up)');
           }
         }
       }
@@ -573,17 +565,20 @@ class _MainScreenState extends State<MainScreen> {
       // Set a timeout only for the audio setup/loading phase
       await Future.any([
         _setupAndStartAudio(audioStreamUrl),
-        Future.delayed(const Duration(seconds: 10), () => throw TimeoutException('Audio setup timeout', const Duration(seconds: 10))),
+        Future.delayed(
+            const Duration(seconds: 10),
+            () => throw TimeoutException(
+                'Audio setup timeout', const Duration(seconds: 10))),
       ]);
 
       debugPrint('Audio playback initiated successfully');
-
     } catch (e) {
       debugPrint('Error playing TTS: $e');
       setState(() => _isPlayingTTS = false);
       if (e.toString().contains('no longer available')) {
         _showError('Audio no longer available - try asking the question again');
-      } else if (e.toString().contains('timeout') || e.toString().contains('Timeout')) {
+      } else if (e.toString().contains('timeout') ||
+          e.toString().contains('Timeout')) {
         _showError('Audio setup timed out');
       } else {
         _showError('Failed to play audio: $e');
@@ -623,7 +618,8 @@ class _MainScreenState extends State<MainScreen> {
       // Start playing - don't await this since it returns immediately and audio plays in background
       _audioPlayer.play();
 
-      debugPrint('Audio playback started successfully with speed: $_playbackSpeed');
+      debugPrint(
+          'Audio playback started successfully with speed: $_playbackSpeed');
     } catch (e) {
       debugPrint('Error in _setupAndStartAudio: $e');
       throw e; // Re-throw to be caught by the caller
@@ -682,16 +678,17 @@ class _MainScreenState extends State<MainScreen> {
                   style: TextStyle(fontWeight: FontWeight.bold)),
             ),
             ...appState.vehicles.map((v) => ListTile(
-              title: Text(_getVehicleDisplayName(v)),
-              subtitle: Text(v.engine + (v.notes.isNotEmpty ? ' — ${v.notes}' : '')),
-              trailing: appState.activeVehicle == v
-                  ? const Icon(Icons.check, color: Colors.orange)
-                  : null,
-              onTap: () {
-                appState.setActiveVehicle(v);
-                Navigator.pop(context);
-              },
-            )),
+                  title: Text(_getVehicleDisplayName(v)),
+                  subtitle: Text(
+                      v.engine + (v.notes.isNotEmpty ? ' — ${v.notes}' : '')),
+                  trailing: appState.activeVehicle == v
+                      ? const Icon(Icons.check, color: Colors.orange)
+                      : null,
+                  onTap: () {
+                    appState.setActiveVehicle(v);
+                    Navigator.pop(context);
+                  },
+                )),
           ],
         );
       },
@@ -723,7 +720,8 @@ class _MainScreenState extends State<MainScreen> {
                   vehicle != null
                       ? _getVehicleDisplayName(vehicle)
                       : 'No Vehicle Selected',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w500),
                 ),
               ),
               IconButton(
@@ -731,7 +729,8 @@ class _MainScreenState extends State<MainScreen> {
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const GarageDashboard()),
+                    MaterialPageRoute(
+                        builder: (context) => const GarageDashboard()),
                   );
                 },
                 tooltip: 'Manage Garage',
@@ -748,156 +747,297 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildMainButtonWithToggle() {
     return Consumer<AppState>(
       builder: (context, appState, child) {
-        IconData iconData;
-        Color buttonColor;
-
-        if (!_permissionGranted && _needsExplicitPermissions) {
-          iconData = Icons.mic_off;
-          buttonColor = Colors.grey;
-        } else if (appState.isPushToTalkMode) {
-          iconData = _isRecording ? Icons.mic : Icons.mic_none;
-          buttonColor = _isRecording ? Colors.redAccent : Colors.orange;
-        } else {
-          iconData = _isListening ? Icons.hearing : Icons.hearing_disabled;
-          buttonColor = _isListening ? Colors.green : Colors.grey;
-        }
-
-        final bool showPermissionWarning = !_permissionGranted && _needsExplicitPermissions;
-        final bool isWakeWordDisabled = !_isWakeWordSupported || showPermissionWarning;
-
         return Container(
           margin: const EdgeInsets.only(bottom: 16, top: 8),
           child: Column(
             children: [
-              // Main microphone button with optional trash icon
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Trash can icon (only show when recording in PTT mode)
-                  if (appState.isPushToTalkMode && _isRecording && !_isLoading)
-                    Container(
-                      margin: const EdgeInsets.only(right: 20),
-                      child: GestureDetector(
-                        onTap: _discardRecording,
-                        child: Container(
-                          width: 50,
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.withValues(alpha: 0.8),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.grey, width: 2),
+              // Text input for web users
+              if (kIsWeb && _showTextInput) ...[
+                Container(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _textController,
+                          focusNode: _textFocusNode,
+                          decoration: const InputDecoration(
+                            hintText:
+                                'Type your car question here... (Enter to send, Shift+Enter for new line)',
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
                           ),
-                          child: const Icon(
-                            Icons.delete_outline,
-                            size: 24,
-                            color: Colors.white,
-                          ),
+                          maxLines: null,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _submitTextQuestion(),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _isLoading ? null : _submitTextQuestion,
+                        icon: _isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.send),
+                        tooltip: 'Send question',
+                      ),
+                    ],
+                  ),
+                ),
+                // Divider with OR text
+                Row(
+                  children: [
+                    Expanded(
+                        child:
+                            Divider(color: Colors.grey.withValues(alpha: 0.3))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'OR',
+                        style: TextStyle(
+                          color: Colors.grey.withValues(alpha: 0.7),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
-                  // Main microphone button
-                  GestureDetector(
-                    onTap: _isLoading ? null : _onMainButtonPressed,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: _isLoading ? Colors.grey : buttonColor,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          if (_isRecording || _isListening)
-                            BoxShadow(
-                              color: buttonColor.withValues(alpha: 0.5),
-                              blurRadius: 16,
-                              spreadRadius: 2,
-                            ),
-                        ],
-                      ),
-                      child: _isLoading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Icon(
-                              iconData,
-                              size: 40,
-                              color: Colors.white,
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Compact mode toggle
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor.withValues(alpha: 0.8),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      appState.isPushToTalkMode ? Icons.push_pin : Icons.hearing,
-                      size: 16,
-                      color: isWakeWordDisabled ? Colors.grey : Theme.of(context).primaryColor,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      appState.isPushToTalkMode ? 'Push to Talk' : 'Wake Word',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: isWakeWordDisabled ? Colors.grey : null,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Transform.scale(
-                      scale: 0.7,
-                      child: Switch(
-                        value: !appState.isPushToTalkMode,
-                        onChanged: !isWakeWordDisabled ? (value) async {
-                          appState.togglePushToTalkMode();
-                          if (!appState.isPushToTalkMode) {
-                            await _startWakeWordListening();
-                          } else {
-                            await _stopWakeWordListening();
-                          }
-                        } : null,
-                        activeColor: Theme.of(context).primaryColor,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
+                    Expanded(
+                        child:
+                            Divider(color: Colors.grey.withValues(alpha: 0.3))),
                   ],
                 ),
-              ),
-              if (showPermissionWarning)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'Mic permission required',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.red.withValues(alpha: 0.8),
-                    ),
-                  ),
-                )
-              else if (!_isWakeWordSupported)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'Wake word not supported on ${Platform.isWindows ? 'Windows' : Platform.isMacOS ? 'macOS' : 'this platform'}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.orange.withValues(alpha: 0.9),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
+              ],
+
+              // Voice interface (existing code)
+              _buildVoiceInterface(appState),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildVoiceInterface(AppState appState) {
+    IconData iconData;
+    Color buttonColor;
+
+    if (!_permissionGranted && _needsExplicitPermissions) {
+      iconData = Icons.mic_off;
+      buttonColor = Colors.grey;
+    } else if (appState.isPushToTalkMode) {
+      iconData = _isRecording ? Icons.mic : Icons.mic_none;
+      buttonColor = _isRecording ? Colors.redAccent : Colors.orange;
+    } else {
+      iconData = _isListening ? Icons.hearing : Icons.hearing_disabled;
+      buttonColor = _isListening ? Colors.green : Colors.grey;
+    }
+
+    final bool showPermissionWarning =
+        !_permissionGranted && _needsExplicitPermissions;
+    final bool isWakeWordDisabled =
+        !_isWakeWordSupported || showPermissionWarning;
+
+    return Column(
+      children: [
+        // Main microphone button with optional trash icon
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Trash can icon (only show when recording in PTT mode)
+            if (appState.isPushToTalkMode && _isRecording && !_isLoading)
+              Container(
+                margin: const EdgeInsets.only(right: 20),
+                child: GestureDetector(
+                  onTap: _discardRecording,
+                  child: Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.8),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.grey, width: 2),
+                    ),
+                    child: const Icon(
+                      Icons.delete_outline,
+                      size: 24,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            // Main microphone button
+            GestureDetector(
+              onTap: _isLoading ? null : _onMainButtonPressed,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: _isLoading ? Colors.grey : buttonColor,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    if (_isRecording || _isListening)
+                      BoxShadow(
+                        color: buttonColor.withValues(alpha: 0.5),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      ),
+                  ],
+                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : Icon(
+                        iconData,
+                        size: 40,
+                        color: Colors.white,
+                      ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // Compact mode toggle (only show if voice is supported)
+        if (!kIsWeb || _recorderInitialized)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor.withValues(alpha: 0.8),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  appState.isPushToTalkMode ? Icons.push_pin : Icons.hearing,
+                  size: 16,
+                  color: isWakeWordDisabled
+                      ? Colors.grey
+                      : Theme.of(context).primaryColor,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  appState.isPushToTalkMode ? 'Push to Talk' : 'Wake Word',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: isWakeWordDisabled ? Colors.grey : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Transform.scale(
+                  scale: 0.7,
+                  child: Switch(
+                    value: !appState.isPushToTalkMode,
+                    onChanged: !isWakeWordDisabled
+                        ? (value) async {
+                            appState.togglePushToTalkMode();
+                            if (!appState.isPushToTalkMode) {
+                              await _startWakeWordListening();
+                            } else {
+                              await _stopWakeWordListening();
+                            }
+                          }
+                        : null,
+                    activeColor: Theme.of(context).primaryColor,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (showPermissionWarning)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Mic permission required',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.red.withValues(alpha: 0.8),
+              ),
+            ),
+          )
+        else if (!appState.isPushToTalkMode &&
+            _isListening &&
+            _recorderInitialized)
+          // Show helpful tip when in active wake word listening mode
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.lightbulb_outline,
+                      size: 14,
+                      color: Colors.green.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Hands-free mode active',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Say "Hey GreaseMonkey" to ask a question',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.green.withValues(alpha: 0.8),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          )
+        else if (!_isWakeWordSupported && !kIsWeb)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Wake word not supported on this platform',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.orange.withValues(alpha: 0.9),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          )
+        else if (kIsWeb && !_recorderInitialized)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Use text input above or enable microphone for voice',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.withValues(alpha: 0.8),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+      ],
     );
   }
 
@@ -941,38 +1081,92 @@ class _MainScreenState extends State<MainScreen> {
                               const SizedBox(height: 16),
                               const Text(
                                 'Welcome to GreaseMonkey AI!',
-                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                    fontSize: 20, fontWeight: FontWeight.bold),
                                 textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 8),
                               const Text(
                                 'First, add your vehicles to get started.\nOnce added, you can ask questions about maintenance, repairs, and more!',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey, fontSize: 16),
+                                style:
+                                    TextStyle(color: Colors.grey, fontSize: 16),
                               ),
                               const SizedBox(height: 24),
                               ElevatedButton.icon(
                                 onPressed: () {
                                   Navigator.push(
                                     context,
-                                    MaterialPageRoute(builder: (context) => const GarageDashboard()),
+                                    MaterialPageRoute(
+                                        builder: (context) =>
+                                            const GarageDashboard()),
                                   );
                                 },
                                 icon: const Icon(Icons.garage),
                                 label: const Text('Manage Your Garage'),
                                 style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 24, vertical: 12),
                                 ),
                               ),
                             ],
                           ),
                         )
                       : visibleQueryHistory.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'Ask your first question!\nTap the microphone button to get started.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey),
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    kIsWeb ? Icons.chat : Icons.mic,
+                                    size: 48,
+                                    color: Colors.grey.withValues(alpha: 0.6),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    kIsWeb
+                                        ? 'Ask your first question!'
+                                        : 'Ask your first question!',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    kIsWeb
+                                        ? 'Type your question above or use the microphone button below.'
+                                        : 'Tap the microphone button to get started.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.grey.withValues(alpha: 0.8),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  if (kIsWeb) ...[
+                                    const SizedBox(height: 16),
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context)
+                                            .primaryColor
+                                            .withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Theme.of(context)
+                                              .primaryColor
+                                              .withValues(alpha: 0.3),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        '💡 Tip: Press Enter to send your question, Shift+Enter for new lines',
+                                        style: TextStyle(fontSize: 12),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             )
                           : Column(
@@ -981,22 +1175,32 @@ class _MainScreenState extends State<MainScreen> {
                                 if (appState.isLoadingMessages)
                                   const Padding(
                                     padding: EdgeInsets.all(8.0),
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   ),
-                                if (appState.hasMoreMessages && !appState.isLoadingMessages)
+                                if (appState.hasMoreMessages &&
+                                    !appState.isLoadingMessages)
                                   TextButton.icon(
-                                    onPressed: () => appState.loadMoreMessages(),
-                                    icon: const Icon(Icons.expand_less, size: 16),
-                                    label: const Text('Load older messages', style: TextStyle(fontSize: 12)),
+                                    onPressed: () =>
+                                        appState.loadMoreMessages(),
+                                    icon:
+                                        const Icon(Icons.expand_less, size: 16),
+                                    label: const Text('Load older messages',
+                                        style: TextStyle(fontSize: 12)),
                                   ),
                                 Expanded(
-                                  child: NotificationListener<ScrollNotification>(
-                                    onNotification: (ScrollNotification scrollInfo) {
+                                  child:
+                                      NotificationListener<ScrollNotification>(
+                                    onNotification:
+                                        (ScrollNotification scrollInfo) {
                                       // Only auto-scroll to bottom when content is first loaded and user hasn't scrolled manually
                                       if (scrollInfo is ScrollEndNotification &&
                                           visibleQueryHistory.isNotEmpty &&
-                                          _scrollController.position.pixels == 0 &&
-                                          _scrollController.position.maxScrollExtent > 0) {
+                                          _scrollController.position.pixels ==
+                                              0 &&
+                                          _scrollController
+                                                  .position.maxScrollExtent >
+                                              0) {
                                         // Only auto-scroll if we're at the very bottom (natural position for new content)
                                         _forceScrollToBottom();
                                       }
@@ -1004,29 +1208,40 @@ class _MainScreenState extends State<MainScreen> {
                                     },
                                     child: ListView.builder(
                                       controller: _scrollController,
-                                      reverse: true, // Show newest messages at bottom
+                                      reverse:
+                                          true, // Show newest messages at bottom
                                       itemCount: visibleQueryHistory.length,
                                       itemBuilder: (context, idx) {
                                         // Since reverse is true, newest messages are at index 0
                                         final q = visibleQueryHistory[idx];
                                         return Container(
-                                          margin: const EdgeInsets.symmetric(vertical: 4),
+                                          margin: const EdgeInsets.symmetric(
+                                              vertical: 4),
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               // User question
                                               Container(
-                                                alignment: Alignment.centerRight,
+                                                alignment:
+                                                    Alignment.centerRight,
                                                 child: Container(
-                                                  padding: const EdgeInsets.all(12),
-                                                  margin: const EdgeInsets.only(left: 40),
+                                                  padding:
+                                                      const EdgeInsets.all(12),
+                                                  margin: const EdgeInsets.only(
+                                                      left: 40),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.blue.withValues(alpha: 0.1),
-                                                    borderRadius: BorderRadius.circular(12),
+                                                    color: Colors.blue
+                                                        .withValues(alpha: 0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            12),
                                                   ),
                                                   child: Text(
                                                     q['question'] ?? '',
-                                                    style: const TextStyle(fontWeight: FontWeight.w500),
+                                                    style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w500),
                                                   ),
                                                 ),
                                               ),
@@ -1035,31 +1250,52 @@ class _MainScreenState extends State<MainScreen> {
                                               Container(
                                                 alignment: Alignment.centerLeft,
                                                 child: Container(
-                                                  padding: const EdgeInsets.all(12),
-                                                  margin: const EdgeInsets.only(right: 40),
+                                                  padding:
+                                                      const EdgeInsets.all(12),
+                                                  margin: const EdgeInsets.only(
+                                                      right: 40),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.orange.withValues(alpha: 0.1),
-                                                    borderRadius: BorderRadius.circular(12),
+                                                    color: Colors.orange
+                                                        .withValues(alpha: 0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            12),
                                                   ),
                                                   child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
                                                     children: [
                                                       Text(q['answer'] ?? ''),
-                                                      if ((q['audio_url'] ?? '').isNotEmpty)
+                                                      if ((q['audio_url'] ?? '')
+                                                          .isNotEmpty)
                                                         FutureBuilder<bool>(
-                                                          future: _isAudioAvailable(q['audio_url']!),
-                                                          builder: (context, snapshot) {
-                                                            final isAvailable = snapshot.data ?? false;
-                                                            if (!isAvailable) return const SizedBox.shrink();
+                                                          future:
+                                                              _isAudioAvailable(
+                                                                  q['audio_url']!),
+                                                          builder: (context,
+                                                              snapshot) {
+                                                            final isAvailable =
+                                                                snapshot.data ??
+                                                                    false;
+                                                            if (!isAvailable)
+                                                              return const SizedBox
+                                                                  .shrink();
 
                                                             return Align(
-                                                              alignment: Alignment.centerRight,
+                                                              alignment: Alignment
+                                                                  .centerRight,
                                                               child: IconButton(
-                                                                icon: const Icon(Icons.volume_up, size: 20),
+                                                                icon: const Icon(
+                                                                    Icons
+                                                                        .volume_up,
+                                                                    size: 20),
                                                                 onPressed: _isLoading
                                                                     ? null
-                                                                    : () => _playTTS(q['audio_url']!),
-                                                                tooltip: 'Replay audio',
+                                                                    : () => _playTTS(
+                                                                        q['audio_url']!),
+                                                                tooltip:
+                                                                    'Replay audio',
                                                               ),
                                                             );
                                                           },
@@ -1068,7 +1304,9 @@ class _MainScreenState extends State<MainScreen> {
                                                   ),
                                                 ),
                                               ),
-                                              if (idx < visibleQueryHistory.length - 1)
+                                              if (idx <
+                                                  visibleQueryHistory.length -
+                                                      1)
                                                 const SizedBox(height: 16),
                                             ],
                                           ),
@@ -1088,11 +1326,98 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  void _setupWebKeyboardShortcuts() {
+    // Add keyboard shortcuts for web users
+    _textFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.enter) {
+        if (HardwareKeyboard.instance.isShiftPressed) {
+          // Shift+Enter = new line (let default behavior handle it)
+          return KeyEventResult.ignored;
+        } else {
+          // Enter = send message
+          _submitTextQuestion();
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    };
+  }
+
+  Future<void> _submitTextQuestion() async {
+    final text = _textController.text.trim();
+    if (text.isEmpty || _isLoading) return;
+
+    _textController.clear();
+
+    final appState = Provider.of<AppState>(context, listen: false);
+    final userId = appState.userId ?? appState.hashCode.toString();
+    final vehicle = appState.activeVehicle;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final answer = await ApiService.askQuestion(
+        userId: userId,
+        question: text,
+        car: vehicle?.name,
+        engine: vehicle?.engine,
+        notes: vehicle?.notes,
+        unitPreferences: appState.unitPreferences,
+      );
+
+      if (answer == null) {
+        setState(() => _isLoading = false);
+        _showError('Backend error.');
+        return;
+      }
+
+      String audioUrl = answer['audio_url'] ?? '';
+
+      if (vehicle == null) {
+        await appState.addQueryToHistory({
+          'question': text,
+          'answer':
+              'Before I answer, which car is this for? (Please set an active vehicle in your garage.)',
+          'audio_url': '',
+        });
+      } else {
+        await appState.addQueryToHistory({
+          'question': text,
+          'answer': answer['answer'] ?? 'No answer',
+          'audio_url': audioUrl,
+        });
+
+        // Track usage for analytics and billing
+        await UsageService.trackQuestionUsage(
+          userId,
+          question: text,
+          vehicleId: vehicle.name,
+          hadAudio: false,
+        );
+      }
+
+      setState(() => _isLoading = false);
+
+      // Auto-scroll to bottom to show new message
+      _forceScrollToBottom();
+
+      if (audioUrl.isNotEmpty && vehicle != null && _autoPlay) {
+        await _playTTS(audioUrl);
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showError('Failed to submit question: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AppState>(
       builder: (context, appState, child) {
         final vehicle = appState.activeVehicle;
+        final isWideScreen = kIsWeb && MediaQuery.of(context).size.width > 768;
+
         return Scaffold(
           appBar: AppBar(
             title: GestureDetector(
@@ -1111,7 +1436,8 @@ class _MainScreenState extends State<MainScreen> {
                       vehicle != null
                           ? _getVehicleDisplayName(vehicle)
                           : 'Select Vehicle',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -1126,7 +1452,8 @@ class _MainScreenState extends State<MainScreen> {
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const GarageDashboard()),
+                    MaterialPageRoute(
+                        builder: (context) => const GarageDashboard()),
                   );
                 },
                 tooltip: 'Manage Garage',
@@ -1154,23 +1481,185 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ],
           ),
-          body: Column(
-            children: [
-              _buildTranscriptContainer(),
-              if (_isPlayingTTS)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 4.0),
-                  child: SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              _buildMainButtonWithToggle(),
-            ],
-          ),
+          body: isWideScreen ? _buildWideScreenLayout() : _buildMobileLayout(),
         );
       },
+    );
+  }
+
+  Widget _buildWideScreenLayout() {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 1200),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          // Left sidebar with controls
+          Container(
+            width: 320,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Vehicle info card
+                Card(
+                  child: Consumer<AppState>(
+                    builder: (context, appState, child) {
+                      final vehicle = appState.activeVehicle;
+                      return Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.directions_car,
+                                  color: vehicle != null
+                                      ? Colors.orange
+                                      : Colors.grey,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Active Vehicle',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              vehicle != null
+                                  ? _getVehicleDisplayName(vehicle)
+                                  : 'No vehicle selected',
+                              style: TextStyle(
+                                color: vehicle != null ? null : Colors.grey,
+                              ),
+                            ),
+                            if (vehicle?.engine != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Engine: ${vehicle!.engine}',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const GarageDashboard(),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.garage, size: 16),
+                              label: const Text('Manage Garage'),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Input controls
+                Expanded(
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'Ask a Question',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          // Text input area
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                    color: Colors.grey.withValues(alpha: 0.3)),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: TextField(
+                                controller: _textController,
+                                focusNode: _textFocusNode,
+                                decoration: const InputDecoration(
+                                  hintText: 'Type your car question here...',
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.all(16),
+                                ),
+                                maxLines: null,
+                                expands: true,
+                                textAlignVertical: TextAlignVertical.top,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: _isLoading ? null : _submitTextQuestion,
+                            icon: _isLoading
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.send),
+                            label: const Text('Send Question'),
+                          ),
+                          const SizedBox(height: 16),
+                          const Divider(),
+                          const SizedBox(height: 16),
+                          // Voice controls
+                          _buildVoiceInterface(
+                            Provider.of<AppState>(context, listen: false),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Main conversation area
+          Expanded(
+            child: _buildTranscriptContainer(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout() {
+    return Column(
+      children: [
+        _buildTranscriptContainer(),
+        if (_isPlayingTTS)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 4.0),
+            child: SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        _buildMainButtonWithToggle(),
+      ],
     );
   }
 }

@@ -1,13 +1,16 @@
 {
-    "name": "greasemonkey_ai",
-    "short_name": "greasemonkey_ai",
-    "start_url": ".",
+    "name": "GreaseMonkey AI",
+    "short_name": "GreaseMonkey",
+    "description": "Voice-first AI copilot for automotive repair and maintenance. Get instant answers to car questions, upload manuals, and manage your garage.",
+    "start_url": "/",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
     "orientation": "portrait-primary",
+    "background_color": "#1e1e1e",
+    "theme_color": "#ff6b35",
     "prefer_related_applications": false,
+    "categories": ["automotive", "tools", "productivity"],
+    "lang": "en-US",
+    "scope": "/",
     "icons": [
         {
             "src": "icons/Icon-192.png",
@@ -30,6 +33,15 @@
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "maskable"
+        }
+    ],
+    "screenshots": [
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "form_factor": "wide",
+            "label": "GreaseMonkey AI Dashboard"
         }
     ]
 }

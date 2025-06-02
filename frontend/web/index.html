@@ -1,10 +1,116 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <meta charset="UTF-8" />
+    <base href="$FLUTTER_BASE_HREF">
+    <meta charset="UTF-8">
+    <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+    <meta name="description" content="GreaseMonkey AI - Voice-first AI copilot for automotive repair and maintenance">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="GreaseMonkey AI">
+    <meta name="google-site-verification" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <!-- Favicon -->
+    <link rel="apple-touch-icon" href="icons/Icon-192.png">
+    <link rel="icon" type="image/png" href="favicon.png"/>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+
     <title>GreaseMonkey AI</title>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        overflow: hidden;
+      }
+
+      .loading-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        color: white;
+      }
+
+      .loading-logo {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin-bottom: 2rem;
+        background: linear-gradient(45deg, #ff6b35, #f7931e);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid rgba(255, 107, 53, 0.3);
+        border-top: 3px solid #ff6b35;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+      }
+
+      .loading-text {
+        color: #ccc;
+        font-size: 0.9rem;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      @media (max-width: 768px) {
+        .loading-logo {
+          font-size: 2rem;
+        }
+      }
+
+      /* Hide loading screen when Flutter is ready */
+      .flutter-ready .loading-container {
+        display: none;
+      }
+    </style>
   </head>
   <body>
-    <script src="main.dart.js"></script>
+    <!-- Loading screen -->
+    <div class="loading-container" id="loading">
+      <div class="loading-logo">🔧 GreaseMonkey AI</div>
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Loading your AI automotive assistant...</div>
+    </div>
+
+    <!-- Flutter app will be injected here -->
+    <div id="app"></div>
+
+    <script>
+      window.addEventListener('flutter-first-frame', function () {
+        document.body.classList.add('flutter-ready');
+      });
+
+      // Service Worker registration for PWA
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('flutter-first-frame', function () {
+          navigator.serviceWorker.register('flutter_service_worker.js?v=4294967296');
+        });
+      }
+    </script>
+
+    <!-- Flutter bootstrap script -->
+    <script src="flutter_bootstrap.js" async></script>
   </body>
 </html>
