@@ -24,6 +24,7 @@ dependencies:
   sentry_flutter: ^8.14.2
   permission_handler: ^11.3.1
   file_picker: ^8.0.0+1
+  in_app_purchase: ^3.2.1
 
 dev_dependencies:
   sentry_dart_plugin: ^2.4.1

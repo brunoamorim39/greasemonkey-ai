@@ -10,10 +10,17 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from models import UnitPreferences, DocumentType, DocumentStatus, DocumentMetadata, UserTier, DocumentSearchResult
+from models import (
+    UsageType, UsageRecord, DailyUsageStats, TierLimits,
+    UserUsageRequest, UserUsageResponse, OverrideTierRequest,
+    ReceiptVerificationRequest, ReceiptVerificationResponse, SubscriptionTier as NewSubscriptionTier,
+    Platform, SubscriptionStatusResponse, UserSubscription, SubscriptionStatus, WebhookEvent,
+    UsageCheckRequest, UsageCheckResponse
+)
+from datetime import datetime, date, timedelta
+from typing import List, Optional, Tuple, Dict
 import hashlib
 import uuid
-from datetime import datetime
-from typing import List, Optional, Tuple
 import pypdf
 import io
 
@@ -149,11 +156,39 @@ MAX_STORAGE_PAID_MB = int(os.getenv("MAX_STORAGE_PAID_MB", "1000"))
 # Supabase Storage configuration
 STORAGE_BUCKET = os.getenv("STORAGE_BUCKET", "documents")
 
-# Storage tier limits
-STORAGE_LIMITS = {
-    UserTier.FREE: 0,  # Free users can't upload documents
-    UserTier.USAGE_PAID: MAX_STORAGE_PAID_MB,
-    UserTier.FIXED_RATE: MAX_STORAGE_PAID_MB
+# Tier configuration - 3-tier subscription model (Free + 2 paid)
+TIER_CONFIGS = {
+    UserTier.FREE_TIER: TierLimits(
+        max_daily_asks=3,
+        max_document_uploads=0,  # No uploads for free
+        max_vehicles=1,
+        max_storage_mb=0.0,
+        document_upload_enabled=False,
+        tts_enabled=True,
+        stt_enabled=True
+    ),
+    UserTier.WEEKEND_WARRIOR: TierLimits(
+        max_daily_asks=None,  # No daily limit, but monthly limit applies
+        max_monthly_asks=50,  # 50 questions per month
+        max_document_uploads=20,  # 20 documents maximum (total)
+        max_vehicles=None,  # Unlimited vehicles
+        max_storage_mb=MAX_STORAGE_PAID_MB,
+        document_upload_enabled=True,
+        tts_enabled=True,
+        stt_enabled=True
+        # No per-use costs for subscription plan
+    ),
+    UserTier.MASTER_TECH: TierLimits(
+        max_daily_asks=None,  # No daily limit, but monthly limit applies
+        max_monthly_asks=200,  # 200 questions per month (10¢/question value prop)
+        max_document_uploads=None,  # Unlimited documents
+        max_vehicles=None,
+        max_storage_mb=None,  # Unlimited storage
+        document_upload_enabled=True,
+        tts_enabled=True,
+        stt_enabled=True
+        # No per-use costs for subscription plan
+    )
 }
 
 # Create documents directory if it doesn't exist
@@ -258,12 +293,12 @@ class DocumentManager:
             user_tier = UserTier(user_result.data[0]["tier"])
 
             # Check if tier allows uploads
-            if user_tier == UserTier.FREE:
+            if user_tier == UserTier.FREE_TIER:
                 return False, "Document uploads require a paid plan"
 
             # Check storage limits
             current_usage = self.get_user_storage_usage(user_id)
-            max_storage = STORAGE_LIMITS[user_tier]
+            max_storage = TIER_CONFIGS[user_tier].max_storage_mb
 
             if current_usage + file_size_mb > max_storage:
                 return False, f"Storage limit exceeded. Used: {current_usage:.1f}MB, Limit: {max_storage}MB"
@@ -719,7 +754,7 @@ def log_query(user_id: str, question: str, response: str):
                     "user_id": user_id,  # Fixed: use user_id instead of id
                     "email": None,  # Optional field
                     "garage": [],   # Default empty garage
-                    "tier": "free"  # Default tier
+                    "tier": "free_tier"  # Default tier
                 }).execute()
 
                 # Now try logging the query again
@@ -733,3 +768,652 @@ def log_query(user_id: str, question: str, response: str):
                 logger.warning(f"Failed to create user and log query for {user_id}: {create_error}")
         else:
             logger.warning(f"Failed to log query for user {user_id}: {e}")
+
+class PricingService:
+    """Service for managing user usage, pricing, and tier enforcement."""
+
+    def __init__(self):
+        self.supabase = supabase
+
+    def get_user_tier(self, user_id: str) -> UserTier:
+        """Get user's current tier, considering any active overrides."""
+        if not self.supabase:
+            return UserTier.FREE_TIER
+
+        try:
+            # Check for active tier override first
+            override_result = self.supabase.table("tier_overrides").select("*").eq("user_id", user_id).gte("expires_at", datetime.now().isoformat()).execute()
+
+            if override_result.data:
+                # Use the most recent override
+                override = sorted(override_result.data, key=lambda x: x['created_at'])[-1]
+                logger.info(f"Using tier override for user {user_id}: {override['override_tier']}")
+                return UserTier(override['override_tier'])
+
+            # Get regular user tier
+            user_result = self.supabase.table("users").select("tier").eq("user_id", user_id).execute()
+            if user_result.data:
+                return UserTier(user_result.data[0]["tier"])
+            else:
+                # Create user with default tier if doesn't exist
+                self.supabase.table("users").insert({
+                    "user_id": user_id,  # Fixed: use user_id instead of id
+                    "email": None,  # Optional field
+                    "garage": [],   # Default empty garage
+                    "tier": "free_tier"  # Default tier
+                }).execute()
+                return UserTier.FREE_TIER
+
+        except Exception as e:
+            logger.error(f"Error getting user tier for {user_id}: {e}")
+            return UserTier.FREE_TIER
+
+    def get_tier_limits(self, tier: UserTier) -> TierLimits:
+        """Get the limits for a specific tier."""
+        return TIER_CONFIGS.get(tier, TIER_CONFIGS[UserTier.FREE_TIER])
+
+    def track_usage(self, user_id: str, usage_type: UsageType, details: Optional[Dict] = None) -> bool:
+        """Track a usage event and calculate cost if applicable."""
+        if not self.supabase:
+            return True  # If no DB, allow usage
+
+        try:
+            tier = self.get_user_tier(user_id)
+            tier_limits = self.get_tier_limits(tier)
+
+            # No cost calculation needed for subscription-only model
+            cost_cents = 0
+
+            # Record usage for analytics only (no billing)
+            usage_record = {
+                "user_id": user_id,
+                "usage_type": usage_type.value,
+                "timestamp": datetime.now().isoformat(),
+                "details": details or {},
+                "cost_cents": cost_cents
+            }
+
+            self.supabase.table("usage_records").insert(usage_record).execute()
+
+            # Update daily stats
+            self._update_daily_stats(user_id, usage_type, cost_cents)
+
+            logger.info(f"Tracked usage for user {user_id}: {usage_type.value} (cost: ${cost_cents/100:.2f})")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error tracking usage for user {user_id}: {e}")
+            return False
+
+    def _update_daily_stats(self, user_id: str, usage_type: UsageType, cost_cents: int):
+        """Update daily usage statistics."""
+        today = date.today().isoformat()
+
+        try:
+            # Get existing daily stats
+            stats_result = self.supabase.table("daily_usage_stats").select("*").eq("user_id", user_id).eq("date", today).execute()
+
+            if stats_result.data:
+                # Update existing record
+                stats = stats_result.data[0]
+                stats_id = stats["id"]
+
+                # Increment the appropriate counter
+                if usage_type == UsageType.ASK_QUERY:
+                    stats["ask_queries"] += 1
+                elif usage_type == UsageType.DOCUMENT_UPLOAD:
+                    stats["document_uploads"] += 1
+                elif usage_type == UsageType.DOCUMENT_SEARCH:
+                    stats["document_searches"] += 1
+                elif usage_type == UsageType.TTS_REQUEST:
+                    stats["tts_requests"] += 1
+                elif usage_type == UsageType.STT_REQUEST:
+                    stats["stt_requests"] += 1
+
+                stats["total_cost_cents"] += cost_cents
+
+                self.supabase.table("daily_usage_stats").update(stats).eq("id", stats_id).execute()
+            else:
+                # Create new daily stats record
+                new_stats = {
+                    "user_id": user_id,
+                    "date": today,
+                    "ask_queries": 1 if usage_type == UsageType.ASK_QUERY else 0,
+                    "document_uploads": 1 if usage_type == UsageType.DOCUMENT_UPLOAD else 0,
+                    "document_searches": 1 if usage_type == UsageType.DOCUMENT_SEARCH else 0,
+                    "tts_requests": 1 if usage_type == UsageType.TTS_REQUEST else 0,
+                    "stt_requests": 1 if usage_type == UsageType.STT_REQUEST else 0,
+                    "total_cost_cents": cost_cents
+                }
+
+                self.supabase.table("daily_usage_stats").insert(new_stats).execute()
+
+        except Exception as e:
+            logger.error(f"Error updating daily stats for user {user_id}: {e}")
+
+    def _get_monthly_usage(self, user_id: str, year_month: str) -> MonthlyUsageStats:
+        """Get monthly usage statistics for a user."""
+        try:
+            # Try to get existing monthly stats
+            stats_result = self.supabase.table("monthly_usage_stats").select("*").eq("user_id", user_id).eq("year_month", year_month).execute()
+
+            if stats_result.data:
+                stats_data = stats_result.data[0]
+                return MonthlyUsageStats(
+                    user_id=user_id,
+                    year_month=year_month,
+                    ask_queries=stats_data.get("ask_queries", 0),
+                    document_uploads=stats_data.get("document_uploads", 0),
+                    document_searches=stats_data.get("document_searches", 0),
+                    tts_requests=stats_data.get("tts_requests", 0),
+                    stt_requests=stats_data.get("stt_requests", 0),
+                    total_cost_cents=stats_data.get("total_cost_cents", 0)
+                )
+            else:
+                # Calculate from daily stats if monthly doesn't exist
+                year, month = year_month.split("-")
+                daily_stats = self.supabase.table("daily_usage_stats").select("*").eq("user_id", user_id).like("date", f"{year}-{month}-%").execute()
+
+                total_asks = sum(day.get("ask_queries", 0) for day in daily_stats.data)
+                total_uploads = sum(day.get("document_uploads", 0) for day in daily_stats.data)
+                total_searches = sum(day.get("document_searches", 0) for day in daily_stats.data)
+                total_tts = sum(day.get("tts_requests", 0) for day in daily_stats.data)
+                total_stt = sum(day.get("stt_requests", 0) for day in daily_stats.data)
+                total_cost = sum(day.get("total_cost_cents", 0) for day in daily_stats.data)
+
+                return MonthlyUsageStats(
+                    user_id=user_id,
+                    year_month=year_month,
+                    ask_queries=total_asks,
+                    document_uploads=total_uploads,
+                    document_searches=total_searches,
+                    tts_requests=total_tts,
+                    stt_requests=total_stt,
+                    total_cost_cents=total_cost
+                )
+
+        except Exception as e:
+            logger.error(f"Error getting monthly usage for user {user_id}: {e}")
+            return MonthlyUsageStats(user_id=user_id, year_month=year_month)
+
+    def _get_total_document_count(self, user_id: str) -> int:
+        """Get total number of documents uploaded by user."""
+        try:
+            result = self.supabase.table("documents").select("id", count="exact").eq("user_id", user_id).execute()
+            return result.count or 0
+        except Exception as e:
+            logger.error(f"Error getting document count for user {user_id}: {e}")
+            return 0
+
+    def check_usage_limit(self, user_id: str, usage_type: UsageType) -> Tuple[bool, str]:
+        """Check if user can perform an action based on their tier limits."""
+        if not self.supabase:
+            return True, "OK"  # If no DB, allow usage
+
+        try:
+            tier = self.get_user_tier(user_id)
+            tier_limits = self.get_tier_limits(tier)
+
+            # For Master Tech tier, no limits apply
+            if tier == UserTier.MASTER_TECH:
+                return True, "OK"
+
+            # Check daily limits for free tier
+            if tier == UserTier.FREE_TIER:
+                today = date.today().isoformat()
+                stats_result = self.supabase.table("daily_usage_stats").select("*").eq("user_id", user_id).eq("date", today).execute()
+                current_usage = stats_result.data[0] if stats_result.data else None
+
+                if usage_type == UsageType.ASK_QUERY:
+                    max_asks = tier_limits.max_daily_asks
+                    if max_asks is not None:
+                        used_asks = current_usage["ask_queries"] if current_usage else 0
+                        if used_asks >= max_asks:
+                            return False, f"Daily limit reached ({used_asks}/{max_asks} questions used). Upgrade to Weekend Warrior for 50 questions/month."
+
+            # Check monthly limits for Weekend Warrior tier
+            elif tier == UserTier.WEEKEND_WARRIOR:
+                if usage_type == UsageType.ASK_QUERY:
+                    max_monthly_asks = tier_limits.max_monthly_asks
+                    if max_monthly_asks is not None:
+                        # Get current month's usage
+                        current_month = date.today().strftime("%Y-%m")
+                        monthly_stats = self._get_monthly_usage(user_id, current_month)
+                        used_asks = monthly_stats.ask_queries
+
+                        if used_asks >= max_monthly_asks:
+                            return False, f"Monthly limit reached ({used_asks}/{max_monthly_asks} questions used). Upgrade to Master Tech for 200 questions/month."
+
+            # Check document upload limits (applies to all paid tiers)
+            if usage_type == UsageType.DOCUMENT_UPLOAD:
+                max_uploads = tier_limits.max_document_uploads
+                if max_uploads is not None:
+                    # Get total document count for user
+                    total_docs = self._get_total_document_count(user_id)
+                    if total_docs >= max_uploads:
+                        if tier == UserTier.FREE_TIER:
+                            return False, f"Document upload limit reached. Upgrade to Weekend Warrior for document uploads."
+                        elif tier == UserTier.WEEKEND_WARRIOR:
+                            return False, f"Document upload limit reached ({total_docs}/{max_uploads}). Upgrade to Master Tech for unlimited documents."
+
+            return True, "OK"
+
+        except Exception as e:
+            logger.error(f"Error checking usage limit for user {user_id}: {e}")
+            return True, "OK"  # Allow usage if check fails
+
+    def get_user_usage_stats(self, user_id: str, date_str: Optional[str] = None) -> UserUsageResponse:
+        """Get comprehensive usage statistics for a user."""
+        if date_str is None:
+            date_str = date.today().isoformat()
+
+        tier = self.get_user_tier(user_id)
+        tier_limits = self.get_tier_limits(tier)
+
+        # Get daily stats
+        daily_stats = DailyUsageStats(user_id=user_id, date=date_str)
+
+        if self.supabase:
+            try:
+                stats_result = self.supabase.table("daily_usage_stats").select("*").eq("user_id", user_id).eq("date", date_str).execute()
+                if stats_result.data:
+                    stats_data = stats_result.data[0]
+                    daily_stats = DailyUsageStats(
+                        user_id=user_id,
+                        date=date_str,
+                        ask_queries=stats_data.get("ask_queries", 0),
+                        document_uploads=stats_data.get("document_uploads", 0),
+                        document_searches=stats_data.get("document_searches", 0),
+                        tts_requests=stats_data.get("tts_requests", 0),
+                        stt_requests=stats_data.get("stt_requests", 0),
+                        total_cost_cents=stats_data.get("total_cost_cents", 0)
+                    )
+            except Exception as e:
+                logger.error(f"Error getting daily stats for user {user_id}: {e}")
+
+        # Calculate remaining asks for free tier only
+        remaining_asks = None
+        if tier == UserTier.FREE_TIER and tier_limits.max_daily_asks is not None:
+            remaining_asks = max(0, tier_limits.max_daily_asks - daily_stats.ask_queries)
+
+        # No cost estimation needed for subscription-only model
+        estimated_monthly_cost_cents = None
+
+        can_make_requests, _ = self.check_usage_limit(user_id, UsageType.ASK_QUERY)
+
+        return UserUsageResponse(
+            user_id=user_id,
+            tier=tier,
+            date=date_str,
+            daily_stats=daily_stats,
+            tier_limits=tier_limits,
+            can_make_requests=can_make_requests,
+            remaining_asks=remaining_asks,
+            estimated_monthly_cost_cents=estimated_monthly_cost_cents
+        )
+
+    def check_vehicle_limit(self, user_id: str, current_vehicle_count: int) -> Tuple[bool, str]:
+        """Check if user can add more vehicles based on their tier."""
+        tier = self.get_user_tier(user_id)
+        tier_limits = self.get_tier_limits(tier)
+
+        if tier_limits.max_vehicles is not None:
+            if current_vehicle_count >= tier_limits.max_vehicles:
+                return False, f"Vehicle limit reached ({current_vehicle_count}/{tier_limits.max_vehicles}). Upgrade for unlimited vehicles."
+
+        return True, "OK"
+
+    def set_tier_override(self, user_id: str, override_tier: UserTier, expires_at: Optional[datetime] = None) -> bool:
+        """Set a temporary tier override for testing/development."""
+        if not self.supabase:
+            return False
+
+        try:
+            if expires_at is None:
+                # Default to 24 hours from now
+                expires_at = datetime.now() + timedelta(hours=24)
+
+            override_data = {
+                "user_id": user_id,
+                "override_tier": override_tier.value,
+                "expires_at": expires_at.isoformat(),
+                "created_at": datetime.now().isoformat()
+            }
+
+            self.supabase.table("tier_overrides").insert(override_data).execute()
+            logger.info(f"Set tier override for user {user_id}: {override_tier.value} until {expires_at}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error setting tier override for user {user_id}: {e}")
+            return False
+
+# Global pricing service instance
+pricing_service = PricingService()
+
+# =============================================================================
+# SUBSCRIPTION MANAGEMENT SERVICE
+# =============================================================================
+
+class SubscriptionService:
+    def __init__(self):
+        self.supabase: Client = create_client(
+            SUPABASE_URL,
+            os.getenv("SUPABASE_SERVICE_KEY")  # Use service role key for admin operations
+        )
+
+        # App Store Connect API credentials (optional - for server-to-server verification)
+        self.app_store_shared_secret = os.getenv("APP_STORE_SHARED_SECRET")
+
+        # Play Store API credentials (optional)
+        self.play_store_service_account = os.getenv("PLAY_STORE_SERVICE_ACCOUNT_JSON")
+
+    async def verify_receipt(self, request: ReceiptVerificationRequest) -> ReceiptVerificationResponse:
+        """Verify purchase receipt from App Store or Play Store"""
+
+        try:
+            if request.platform == Platform.IOS:
+                return await self._verify_ios_receipt(request)
+            elif request.platform == Platform.ANDROID:
+                return await self._verify_android_receipt(request)
+            else:
+                return ReceiptVerificationResponse(
+                    success=False,
+                    tier=NewSubscriptionTier.GARAGE_VISITOR,
+                    error_message="Unsupported platform"
+                )
+        except Exception as e:
+            return ReceiptVerificationResponse(
+                success=False,
+                tier=NewSubscriptionTier.GARAGE_VISITOR,
+                error_message=f"Receipt verification failed: {str(e)}"
+            )
+
+    async def _verify_ios_receipt(self, request: ReceiptVerificationRequest) -> ReceiptVerificationResponse:
+        """Verify iOS App Store receipt"""
+
+        # For production, use https://buy.itunes.apple.com/verifyReceipt
+        # For testing, use https://sandbox.itunes.apple.com/verifyReceipt
+        verification_url = "https://buy.itunes.apple.com/verifyReceipt"
+
+        payload = {
+            "receipt-data": request.receipt_data,
+            "password": self.app_store_shared_secret,
+            "exclude-old-transactions": True
+        }
+
+        try:
+            response = requests.post(verification_url, json=payload, timeout=30)
+            result = response.json()
+
+            # If production verification fails with status 21007, try sandbox
+            if result.get("status") == 21007:
+                verification_url = "https://sandbox.itunes.apple.com/verifyReceipt"
+                response = requests.post(verification_url, json=payload, timeout=30)
+                result = response.json()
+
+            if result.get("status") == 0:  # Success
+                # Extract subscription info from receipt
+                latest_receipt_info = result.get("latest_receipt_info", [])
+                if latest_receipt_info:
+                    latest_transaction = latest_receipt_info[-1]
+
+                    # Parse subscription details
+                    product_id = latest_transaction.get("product_id")
+                    expires_date_ms = int(latest_transaction.get("expires_date_ms", 0))
+                    expires_date = datetime.fromtimestamp(expires_date_ms / 1000) if expires_date_ms else None
+                    purchase_date_ms = int(latest_transaction.get("purchase_date_ms", 0))
+                    purchase_date = datetime.fromtimestamp(purchase_date_ms / 1000) if purchase_date_ms else None
+
+                    # Update subscription in database
+                    tier = self._get_tier_from_product_id(product_id)
+                    subscription_id = await self._update_subscription_in_db(
+                        request.user_id,
+                        request.platform,
+                        request.transaction_id,
+                        product_id,
+                        request.receipt_data,
+                        purchase_date,
+                        expires_date
+                    )
+
+                    return ReceiptVerificationResponse(
+                        success=True,
+                        subscription_id=subscription_id,
+                        tier=tier,
+                        expires_at=expires_date
+                    )
+
+            return ReceiptVerificationResponse(
+                success=False,
+                tier=NewSubscriptionTier.GARAGE_VISITOR,
+                error_message=f"App Store verification failed with status: {result.get('status')}"
+            )
+
+        except Exception as e:
+            return ReceiptVerificationResponse(
+                success=False,
+                tier=NewSubscriptionTier.GARAGE_VISITOR,
+                error_message=f"iOS receipt verification error: {str(e)}"
+            )
+
+    async def _verify_android_receipt(self, request: ReceiptVerificationRequest) -> ReceiptVerificationResponse:
+        """Verify Android Play Store receipt"""
+
+        try:
+            # For Android, you'd typically use Google Play Developer API
+            # This is a simplified implementation - you'd need to implement proper Google API integration
+
+            tier = self._get_tier_from_product_id(request.product_id)
+
+            # For now, set a default expiration (this should come from Play Store API)
+            expires_date = datetime.now() + timedelta(days=30)  # Placeholder
+            purchase_date = datetime.now()
+
+            subscription_id = await self._update_subscription_in_db(
+                request.user_id,
+                request.platform,
+                request.transaction_id,
+                request.product_id,
+                request.receipt_data,
+                purchase_date,
+                expires_date
+            )
+
+            return ReceiptVerificationResponse(
+                success=True,
+                subscription_id=subscription_id,
+                tier=tier,
+                expires_at=expires_date
+            )
+
+        except Exception as e:
+            return ReceiptVerificationResponse(
+                success=False,
+                tier=NewSubscriptionTier.GARAGE_VISITOR,
+                error_message=f"Android receipt verification error: {str(e)}"
+            )
+
+    def _get_tier_from_product_id(self, product_id: str) -> NewSubscriptionTier:
+        """Map product ID to subscription tier"""
+        if product_id in ["gearhead_monthly_499", "gearhead_yearly_4990"]:
+            return NewSubscriptionTier.GEARHEAD
+        elif product_id in ["mastertech_monthly_2999", "mastertech_yearly_29990"]:
+            return NewSubscriptionTier.MASTER_TECH
+        else:
+            return NewSubscriptionTier.GARAGE_VISITOR
+
+    async def _update_subscription_in_db(
+        self,
+        user_id: str,
+        platform: Platform,
+        transaction_id: str,
+        product_id: str,
+        receipt_data: str,
+        purchase_date: datetime,
+        expires_date: datetime
+    ) -> str:
+        """Update user subscription in Supabase database"""
+
+        # Call the database function to update subscription
+        result = self.supabase.rpc(
+            "update_subscription_from_receipt",
+            {
+                "p_user_id": user_id,
+                "p_platform": platform.value,
+                "p_transaction_id": transaction_id,
+                "p_product_id": product_id,
+                "p_receipt_data": receipt_data,
+                "p_purchase_date": purchase_date.isoformat(),
+                "p_expires_date": expires_date.isoformat()
+            }
+        ).execute()
+
+        if result.data:
+            return str(result.data)
+        else:
+            raise Exception("Failed to update subscription in database")
+
+    async def get_user_subscription_status(self, user_id: str) -> SubscriptionStatusResponse:
+        """Get user's current subscription status and permissions"""
+
+        try:
+            # Get user's current tier
+            tier_result = self.supabase.rpc(
+                "get_user_subscription_tier",
+                {"p_user_id": user_id}
+            ).execute()
+
+            current_tier = NewSubscriptionTier(tier_result.data or "garage_visitor")
+
+            # Get subscription details
+            subscription_result = self.supabase.table("user_subscriptions").select("*").eq(
+                "user_id", user_id
+            ).eq("status", "active").order("created_at", desc=True).limit(1).execute()
+
+            subscription = None
+            if subscription_result.data:
+                sub_data = subscription_result.data[0]
+                subscription = UserSubscription(
+                    id=sub_data["id"],
+                    user_id=sub_data["user_id"],
+                    subscription_tier=NewSubscriptionTier(sub_data["subscription_tier"]),
+                    platform=Platform(sub_data["platform"]),
+                    platform_subscription_id=sub_data.get("platform_subscription_id"),
+                    product_id=sub_data["product_id"],
+                    status=SubscriptionStatus(sub_data["status"]),
+                    current_period_start=sub_data.get("current_period_start"),
+                    current_period_end=sub_data.get("current_period_end"),
+                    cancel_at_period_end=sub_data.get("cancel_at_period_end", False),
+                    created_at=sub_data["created_at"],
+                    updated_at=sub_data["updated_at"]
+                )
+
+            # Determine permissions based on tier
+            can_ask_questions = await self._can_user_perform_action(user_id, "ask_question")
+            can_upload_documents = await self._can_user_perform_action(user_id, "upload_document")
+            can_add_vehicles = await self._can_user_perform_action(user_id, "add_vehicle")
+
+            # Calculate remaining usage for free tier
+            questions_remaining = None
+            documents_remaining = None
+
+            if current_tier == NewSubscriptionTier.GARAGE_VISITOR:
+                # Get today's usage
+                usage_result = self.supabase.table("subscription_usage").select("*").eq(
+                    "user_id", user_id
+                ).gte("period_start", datetime.now().date()).limit(1).execute()
+
+                if usage_result.data:
+                    usage = usage_result.data[0]
+                    questions_remaining = max(0, 3 - usage.get("questions_used", 0))
+                else:
+                    questions_remaining = 3
+
+            elif current_tier == NewSubscriptionTier.GEARHEAD:
+                # Get current period usage for documents
+                usage_result = self.supabase.table("subscription_usage").select("*").eq(
+                    "user_id", user_id
+                ).gte("period_start", datetime.now().date()).limit(1).execute()
+
+                if usage_result.data:
+                    usage = usage_result.data[0]
+                    documents_remaining = max(0, 20 - usage.get("documents_uploaded", 0))
+                else:
+                    documents_remaining = 20
+
+            return SubscriptionStatusResponse(
+                user_id=user_id,
+                current_tier=current_tier,
+                subscription=subscription,
+                can_ask_questions=can_ask_questions,
+                can_upload_documents=can_upload_documents,
+                can_add_vehicles=can_add_vehicles,
+                questions_remaining=questions_remaining,
+                documents_remaining=documents_remaining
+            )
+
+        except Exception as e:
+            # Return default free tier status on error
+            return SubscriptionStatusResponse(
+                user_id=user_id,
+                current_tier=NewSubscriptionTier.GARAGE_VISITOR,
+                subscription=None,
+                can_ask_questions=False,
+                can_upload_documents=False,
+                can_add_vehicles=False,
+                questions_remaining=0
+            )
+
+    async def _can_user_perform_action(self, user_id: str, action: str) -> bool:
+        """Check if user can perform a specific action"""
+        try:
+            result = self.supabase.rpc(
+                "can_user_perform_action",
+                {
+                    "p_user_id": user_id,
+                    "p_action": action
+                }
+            ).execute()
+
+            return bool(result.data)
+        except:
+            return False
+
+    async def handle_webhook(self, platform: Platform, payload: Dict[str, str]) -> bool:
+        """Handle webhook notifications from app stores"""
+
+        try:
+            # Store webhook event
+            self.supabase.table("webhook_events").insert({
+                "platform": platform.value,
+                "event_type": payload.get("notification_type", "unknown"),
+                "raw_payload": payload,
+                "processed": False
+            }).execute()
+
+            # Process webhook based on platform
+            if platform == Platform.IOS:
+                return await self._process_ios_webhook(payload)
+            elif platform == Platform.ANDROID:
+                return await self._process_android_webhook(payload)
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Webhook processing error: {str(e)}")
+            return False
+
+    async def _process_ios_webhook(self, payload: Dict[str, str]) -> bool:
+        """Process iOS App Store Server Notifications"""
+        # Implementation for iOS webhook processing
+        # This would handle subscription cancellations, renewals, etc.
+        return True
+
+    async def _process_android_webhook(self, payload: Dict[str, str]) -> bool:
+        """Process Android Play Store Developer Notifications"""
+        # Implementation for Android webhook processing
+        return True
+
+# Initialize subscription service
+subscription_service = SubscriptionService()

@@ -10,6 +10,8 @@ import 'screens/launch_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/vehicle_edit_screen.dart';
+import 'screens/query_screen.dart';
+import 'services/usage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -280,13 +282,31 @@ class _AddVehicleDialogState extends State<AddVehicleDialog> {
     });
 
     try {
+      final appState = provider_pkg.Provider.of<AppState>(context, listen: false);
+
+      // Check vehicle limits before adding
+      if (appState.userId != null) {
+        final canAdd = await UsageService.canAddVehicle(appState.userId!, appState.vehicles.length);
+        if (!canAdd) {
+          if (mounted) {
+            setState(() {
+              isLoading = false;
+            });
+
+            // Show upgrade dialog
+            _showUpgradeDialog();
+            return;
+          }
+        }
+      }
+
       final newVehicle = Vehicle(
         name: nameController.text.trim(),
         engine: engineController.text.trim(),
         nickname: nicknameController.text.trim(),
       );
 
-      await provider_pkg.Provider.of<AppState>(context, listen: false).addVehicle(newVehicle);
+      await appState.addVehicle(newVehicle);
 
       if (mounted) {
         Navigator.pop(context);
@@ -310,6 +330,45 @@ class _AddVehicleDialogState extends State<AddVehicleDialog> {
         );
       }
     }
+  }
+
+  void _showUpgradeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Vehicle Limit Reached'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('You\'ve reached the vehicle limit for your current plan.'),
+            SizedBox(height: 16),
+            Text('Free Plan: 1 vehicle'),
+            Text('Paid Plans: Unlimited vehicles'),
+            SizedBox(height: 16),
+            Text('Upgrade to add more vehicles to your garage!'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Navigate to upgrade/pricing screen
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Upgrade functionality coming soon!'),
+                ),
+              );
+            },
+            child: const Text('Upgrade'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
