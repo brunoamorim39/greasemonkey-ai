@@ -62,31 +62,35 @@ class DocumentSourcesWidget extends StatelessWidget {
               padding: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
               child: Wrap(
                 spacing: 6,
-                children: sources.take(3).map((source) => Chip(
-                  label: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        source.type.icon,
-                        size: 10,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        source.title.length > 20
-                          ? '${source.title.substring(0, 20)}...'
-                          : source.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                        ),
-                      ),
-                    ],
-                  ),
-                  backgroundColor: source.type.color.withOpacity(0.7),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                )).toList(),
+                children: sources
+                    .take(3)
+                    .map((source) => Chip(
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                source.type.icon,
+                                size: 10,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                source.title.length > 20
+                                    ? '${source.title.substring(0, 20)}...'
+                                    : source.title,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                ),
+                              ),
+                            ],
+                          ),
+                          backgroundColor: source.type.color.withOpacity(0.7),
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ))
+                    .toList(),
               ),
             ),
           ],
@@ -133,7 +137,7 @@ class DocumentSourcesWidget extends StatelessWidget {
               Expanded(
                 child: Text(
                   source.title,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
@@ -229,35 +233,39 @@ class InlineSourcesWidget extends StatelessWidget {
       child: Wrap(
         spacing: 4,
         runSpacing: 4,
-        children: sources.take(2).map((source) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: source.type.color.withOpacity(0.2),
-            border: Border.all(color: source.type.color, width: 1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                source.type.icon,
-                size: 8,
-                color: source.type.color,
-              ),
-              const SizedBox(width: 3),
-              Text(
-                source.title.length > 15
-                  ? '${source.title.substring(0, 15)}...'
-                  : source.title,
-                style: TextStyle(
-                  color: source.type.color,
-                  fontSize: 8,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        )).toList(),
+        children: sources
+            .take(2)
+            .map((source) => Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: source.type.color.withOpacity(0.2),
+                    border: Border.all(color: source.type.color, width: 1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        source.type.icon,
+                        size: 8,
+                        color: source.type.color,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        source.title.length > 15
+                            ? '${source.title.substring(0, 15)}...'
+                            : source.title,
+                        style: TextStyle(
+                          color: source.type.color,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ))
+            .toList(),
       ),
     );
   }
@@ -302,7 +310,8 @@ class NoSourcesPromptWidget extends StatelessWidget {
                 onPressed: onUploadPressed,
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.blue[400],
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),

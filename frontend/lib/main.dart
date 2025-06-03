@@ -10,7 +10,6 @@ import 'screens/launch_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/vehicle_edit_screen.dart';
-import 'screens/query_screen.dart';
 import 'services/usage_service.dart';
 
 void main() async {
@@ -160,12 +159,15 @@ class GarageDashboard extends StatelessWidget {
                       final isActive = v == appState.activeVehicle;
 
                       return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
                         child: ListTile(
                           title: Text(
                             _getVehicleDisplayName(v),
                             style: TextStyle(
-                              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: isActive
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
                           subtitle: Column(
@@ -173,7 +175,10 @@ class GarageDashboard extends StatelessWidget {
                             children: [
                               Text('Engine: ${v.engine}'),
                               if (v.notes.isNotEmpty)
-                                Text(v.notes, style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+                                Text(v.notes,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        fontStyle: FontStyle.italic)),
                             ],
                           ),
                           leading: Icon(
@@ -269,7 +274,7 @@ class _AddVehicleDialogState extends State<AddVehicleDialog> {
 
   bool get _isFormValid {
     return nameController.text.trim().isNotEmpty &&
-           engineController.text.trim().isNotEmpty;
+        engineController.text.trim().isNotEmpty;
   }
 
   Future<void> _addVehicle() async {
@@ -282,11 +287,13 @@ class _AddVehicleDialogState extends State<AddVehicleDialog> {
     });
 
     try {
-      final appState = provider_pkg.Provider.of<AppState>(context, listen: false);
+      final appState =
+          provider_pkg.Provider.of<AppState>(context, listen: false);
 
       // Check vehicle limits before adding
       if (appState.userId != null) {
-        final canAdd = await UsageService.canAddVehicle(appState.userId!, appState.vehicles.length);
+        final canAdd = await UsageService.canAddVehicle(
+            appState.userId!, appState.vehicles.length);
         if (!canAdd) {
           if (mounted) {
             setState(() {
@@ -312,7 +319,8 @@ class _AddVehicleDialogState extends State<AddVehicleDialog> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Vehicle added! Tap the edit button to add notes and other details.'),
+            content: Text(
+                'Vehicle added! Tap the edit button to add notes and other details.'),
             duration: Duration(seconds: 3),
           ),
         );
@@ -424,11 +432,13 @@ class _AddVehicleDialogState extends State<AddVehicleDialog> {
         ),
         ElevatedButton(
           onPressed: isLoading || !_isFormValid ? null : _addVehicle,
-          child: isLoading ? const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ) : const Text('Add'),
+          child: isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Add'),
         ),
       ],
     );

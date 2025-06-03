@@ -45,7 +45,7 @@ class _MainScreenState extends State<MainScreen> {
   // Web-specific additions
   final TextEditingController _textController = TextEditingController();
   final FocusNode _textFocusNode = FocusNode();
-  bool _showTextInput = kIsWeb;
+  final bool _showTextInput = kIsWeb;
 
   // Helper to check if platform needs explicit permission handling
   bool get _needsExplicitPermissions => !kIsWeb;
@@ -622,7 +622,7 @@ class _MainScreenState extends State<MainScreen> {
           'Audio playback started successfully with speed: $_playbackSpeed');
     } catch (e) {
       debugPrint('Error in _setupAndStartAudio: $e');
-      throw e; // Re-throw to be caught by the caller
+      rethrow; // Re-throw to be caught by the caller
     }
   }
 
@@ -1123,11 +1123,11 @@ class _MainScreenState extends State<MainScreen> {
                                     color: Colors.grey.withValues(alpha: 0.6),
                                   ),
                                   const SizedBox(height: 16),
-                                  Text(
+                                  const Text(
                                     kIsWeb
                                         ? 'Ask your first question!'
                                         : 'Ask your first question!',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -1278,9 +1278,10 @@ class _MainScreenState extends State<MainScreen> {
                                                             final isAvailable =
                                                                 snapshot.data ??
                                                                     false;
-                                                            if (!isAvailable)
+                                                            if (!isAvailable) {
                                                               return const SizedBox
                                                                   .shrink();
+                                                            }
 
                                                             return Align(
                                                               alignment: Alignment

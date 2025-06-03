@@ -181,8 +181,12 @@ class DocumentMetadata {
       fileSize: json['file_size'],
       pageCount: json['page_count'],
       status: DocumentStatus.fromString(json['status']),
-      uploadDate: json['upload_date'] != null ? DateTime.parse(json['upload_date']) : null,
-      processedDate: json['processed_date'] != null ? DateTime.parse(json['processed_date']) : null,
+      uploadDate: json['upload_date'] != null
+          ? DateTime.parse(json['upload_date'])
+          : null,
+      processedDate: json['processed_date'] != null
+          ? DateTime.parse(json['processed_date'])
+          : null,
       errorMessage: json['error_message'],
       tags: List<String>.from(json['tags'] ?? []),
       isPublic: json['is_public'] ?? false,
@@ -221,7 +225,8 @@ class DocumentMetadata {
 
   String get fileSizeFormatted {
     if (fileSize < 1024) return '$fileSize B';
-    if (fileSize < 1024 * 1024) return '${(fileSize / 1024).toStringAsFixed(1)} KB';
+    if (fileSize < 1024 * 1024)
+      return '${(fileSize / 1024).toStringAsFixed(1)} KB';
     return '${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
@@ -330,10 +335,14 @@ class DocumentSource {
 
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
-      if (line.startsWith('Source ') && line.contains('[') && line.contains(']')) {
+      if (line.startsWith('Source ') &&
+          line.contains('[') &&
+          line.contains(']')) {
         try {
           // Extract source information from response
-          final sourceMatch = RegExp(r'Source \d+: \[([^\]]+)\] \(Score: ([\d.]+)\)').firstMatch(line);
+          final sourceMatch =
+              RegExp(r'Source \d+: \[([^\]]+)\] \(Score: ([\d.]+)\)')
+                  .firstMatch(line);
           if (sourceMatch != null) {
             final sourceInfo = sourceMatch.group(1)!;
             final score = double.parse(sourceMatch.group(2)!);
@@ -353,8 +362,9 @@ class DocumentSource {
             // Get snippet from next few lines
             String snippet = '';
             for (int j = i + 1; j < lines.length && j < i + 4; j++) {
-              if (lines[j].trim().isNotEmpty && !lines[j].startsWith('Source ')) {
-                snippet += lines[j].trim() + ' ';
+              if (lines[j].trim().isNotEmpty &&
+                  !lines[j].startsWith('Source ')) {
+                snippet += '${lines[j].trim()} ';
               }
             }
 

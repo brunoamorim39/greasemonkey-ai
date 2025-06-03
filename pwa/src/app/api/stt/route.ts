@@ -1,0 +1,54 @@
+import { NextRequest, NextResponse } from 'next/server'
+import OpenAI from 'openai'
+import { config } from '@/lib/config'
+import { withAuth } from '@/lib/auth'
+
+const openai = new OpenAI({
+  apiKey: config.openai.apiKey,
+  organization: config.openai.organization,
+  project: config.openai.project,
+})
+
+async function transcribeHandler(request: NextRequest) {
+  try {
+    const formData = await request.formData()
+    const audioFile = formData.get('audio') as File
+    const userId = formData.get('user_id') as string
+
+    if (!audioFile || !userId) {
+      return NextResponse.json(
+        { error: 'audio file and user_id are required' },
+        { status: 400 }
+      )
+    }
+
+    // Check file size
+    if (audioFile.size > config.limits.maxAudioSizeBytes) {
+      return NextResponse.json(
+        { error: 'Audio file too large. Maximum size is 25MB.' },
+        { status: 400 }
+      )
+    }
+
+    // Convert File to format OpenAI expects
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: config.openai.whisperModel,
+      response_format: 'text',
+    })
+
+    return NextResponse.json({
+      text: transcription,
+      user_id: userId,
+    })
+
+  } catch (error) {
+    console.error('STT endpoint error:', error)
+    return NextResponse.json(
+      { error: 'Failed to transcribe audio' },
+      { status: 500 }
+    )
+  }
+}
+
+export const POST = withAuth(transcribeHandler)

@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:html' as html;
 import 'dart:js' as js;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // Web implementation for WakeWordService using Web Speech API
 class WakeWordService {

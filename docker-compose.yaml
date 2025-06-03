@@ -1,48 +1,38 @@
 services:
-  backend:
+  # PWA Service - Next.js TypeScript application (standalone)
+  pwa:
     build:
-      context: ./backend
-    container_name: greasemonkey-backend
+      context: ./pwa
+      target: development
+    container_name: greasemonkey-pwa
     env_file:
-      - ./backend/.env
+      - ./pwa/.env
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true  # Enable hot reload in Docker
     ports:
-      - "8000:8000"
+      - "3000:3000"
+    volumes:
+      - ./pwa:/app
+      - /app/node_modules
+      - /app/.next
     restart: unless-stopped
 
-  backend-test:
-    extends:
-      service: backend
-    container_name: greasemonkey-backend-test
-    volumes:
-      - ./backend:/app
-    user: root
-    command: sh -c "pip install pytest pytest-cov && python -m pytest tests/ -v --cov=. --cov-report=term"
-    ports: []
-    restart: "no"
-    profiles:
-      - test
-
-  frontend:
+  # PWA Production service (for testing production builds)
+  pwa-prod:
     build:
-      context: ./frontend
-    container_name: greasemonkey-frontend
+      context: ./pwa
+      target: production
+    container_name: greasemonkey-pwa-prod
     env_file:
-      - ./frontend/.env
+      - ./pwa/.env
+    environment:
+      - NODE_ENV=production
     ports:
-      - "8080:80"
+      - "3001:3000"
     restart: unless-stopped
-    depends_on:
-      - backend
-
-  frontend-test:
-    image: cirrusci/flutter:stable
-    container_name: greasemonkey-frontend-test
-    volumes:
-      - ./frontend:/app
-    working_dir: /app
-    command: sh -c "flutter pub get && flutter test --coverage"
     profiles:
-      - test
+      - prod
 
 networks:
   default:

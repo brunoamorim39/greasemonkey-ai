@@ -4,12 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../state/app_state.dart';
 import '../services/sentry_feedback_service.dart';
-import '../services/sentry_user_service.dart';
-import 'signup_screen.dart';
-import '../models/vehicle.dart';
-import 'vehicle_edit_screen.dart';
 import 'document_library_screen.dart';
-import 'document_upload_screen.dart';
 import '../services/api_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -59,7 +54,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final supabase = Supabase.instance.client;
       await supabase.auth.signOut();
       if (mounted) {
-        provider_pkg.Provider.of<AppState>(context, listen: false).setUserId('');
+        provider_pkg.Provider.of<AppState>(context, listen: false)
+            .setUserId('');
         Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
       }
     } catch (e) {
@@ -98,7 +94,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (confirmed == true && mounted) {
-      final appState = provider_pkg.Provider.of<AppState>(context, listen: false);
+      final appState =
+          provider_pkg.Provider.of<AppState>(context, listen: false);
       await appState.clearQueryHistory();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -197,7 +194,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (user.userMetadata?['first_name'] != null)
                       ListTile(
                         leading: const Icon(Icons.person),
-                        title: Text('${user.userMetadata?['first_name']} ${user.userMetadata?['last_name'] ?? ''}'),
+                        title: Text(
+                            '${user.userMetadata?['first_name']} ${user.userMetadata?['last_name'] ?? ''}'),
                         subtitle: const Text('Name'),
                         contentPadding: EdgeInsets.zero,
                       ),
@@ -272,7 +270,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ListTile(
                     leading: const Icon(Icons.straighten),
                     title: const Text('Measurement Units'),
-                    subtitle: const Text('Set your preferred units for different measurements'),
+                    subtitle: const Text(
+                        'Set your preferred units for different measurements'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     contentPadding: EdgeInsets.zero,
                     onTap: _showUnitPreferences,
@@ -298,7 +297,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ListTile(
                     leading: const Icon(Icons.folder),
                     title: const Text('Manage Documents'),
-                    subtitle: const Text('Upload, view, and manage your service manuals'),
+                    subtitle: const Text(
+                        'Upload, view, and manage your service manuals'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     contentPadding: EdgeInsets.zero,
                     onTap: () {
@@ -318,9 +318,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     builder: (context, snapshot) {
                       if (snapshot.hasData && snapshot.data != null) {
                         final stats = snapshot.data!;
-                        final storageUsedMb = (stats['storage_used_mb'] as num).toDouble();
-                        final maxStorageMb = (stats['max_storage_mb'] as num).toDouble();
-                        final usagePercent = maxStorageMb > 0 ? (storageUsedMb / maxStorageMb * 100) : 0.0;
+                        final storageUsedMb =
+                            (stats['storage_used_mb'] as num).toDouble();
+                        final maxStorageMb =
+                            (stats['max_storage_mb'] as num).toDouble();
+                        final usagePercent = maxStorageMb > 0
+                            ? (storageUsedMb / maxStorageMb * 100)
+                            : 0.0;
 
                         return Container(
                           margin: const EdgeInsets.only(top: 8),
@@ -354,7 +358,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: usagePercent > 80 ? Colors.orange : Colors.grey[600],
+                                      color: usagePercent > 80
+                                          ? Colors.orange
+                                          : Colors.grey[600],
                                     ),
                                   ),
                                 ],
@@ -364,9 +370,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 value: usagePercent / 100,
                                 backgroundColor: Colors.grey[300],
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  usagePercent > 90 ? Colors.red :
-                                  usagePercent > 80 ? Colors.orange :
-                                  Colors.blue,
+                                  usagePercent > 90
+                                      ? Colors.red
+                                      : usagePercent > 80
+                                          ? Colors.orange
+                                          : Colors.blue,
                                 ),
                               ),
                             ],
@@ -397,7 +405,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ListTile(
                     leading: const Icon(Icons.history),
                     title: const Text('Clear Conversation History'),
-                    subtitle: const Text('Remove all saved queries and responses'),
+                    subtitle:
+                        const Text('Remove all saved queries and responses'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     contentPadding: EdgeInsets.zero,
                     onTap: _clearQueryHistory,
@@ -527,15 +536,17 @@ class _UnitPreferencesScreenState extends State<UnitPreferencesScreen> {
             ),
             const SizedBox(height: 12),
             ...options.map((option) => RadioListTile<String>(
-              title: Text(option['label']!),
-              subtitle: option['example'] != null ? Text(option['example']!) : null,
-              value: option['value']!,
-              groupValue: currentValue,
-              onChanged: (value) {
-                setState(() => onChanged(value!));
-              },
-              contentPadding: EdgeInsets.zero,
-            )),
+                  title: Text(option['label']!),
+                  subtitle: option['example'] != null
+                      ? Text(option['example']!)
+                      : null,
+                  value: option['value']!,
+                  groupValue: currentValue,
+                  onChanged: (value) {
+                    setState(() => onChanged(value!));
+                  },
+                  contentPadding: EdgeInsets.zero,
+                )),
           ],
         ),
       ),
@@ -584,8 +595,16 @@ class _UnitPreferencesScreenState extends State<UnitPreferencesScreen> {
             subtitle: 'For bolt torque specs, valve covers, etc.',
             currentValue: _preferences.torqueUnit,
             options: [
-              {'value': 'newton_meters', 'label': 'Newton Meters', 'example': '"10 newton meters"'},
-              {'value': 'pound_feet', 'label': 'Pound Feet', 'example': '"7.5 pound feet"'},
+              {
+                'value': 'newton_meters',
+                'label': 'Newton Meters',
+                'example': '"10 newton meters"'
+              },
+              {
+                'value': 'pound_feet',
+                'label': 'Pound Feet',
+                'example': '"7.5 pound feet"'
+              },
             ],
             onChanged: (value) => _preferences.torqueUnit = value,
           ),
@@ -596,9 +615,17 @@ class _UnitPreferencesScreenState extends State<UnitPreferencesScreen> {
             subtitle: 'For tire pressure, boost, oil pressure',
             currentValue: _preferences.pressureUnit,
             options: [
-              {'value': 'psi', 'label': 'Pounds per Square Inch', 'example': '"32 pounds per square inch"'},
+              {
+                'value': 'psi',
+                'label': 'Pounds per Square Inch',
+                'example': '"32 pounds per square inch"'
+              },
               {'value': 'bar', 'label': 'Bar', 'example': '"2.2 bar"'},
-              {'value': 'kilopascals', 'label': 'Kilopascals', 'example': '"220 kilopascals"'},
+              {
+                'value': 'kilopascals',
+                'label': 'Kilopascals',
+                'example': '"220 kilopascals"'
+              },
             ],
             onChanged: (value) => _preferences.pressureUnit = value,
           ),
@@ -609,8 +636,16 @@ class _UnitPreferencesScreenState extends State<UnitPreferencesScreen> {
             subtitle: 'For gaps, clearances, dimensions',
             currentValue: _preferences.lengthUnit,
             options: [
-              {'value': 'metric', 'label': 'Metric', 'example': '"0.7 millimeters"'},
-              {'value': 'imperial', 'label': 'Imperial', 'example': '"0.028 inches"'},
+              {
+                'value': 'metric',
+                'label': 'Metric',
+                'example': '"0.7 millimeters"'
+              },
+              {
+                'value': 'imperial',
+                'label': 'Imperial',
+                'example': '"0.028 inches"'
+              },
             ],
             onChanged: (value) => _preferences.lengthUnit = value,
           ),
@@ -622,7 +657,11 @@ class _UnitPreferencesScreenState extends State<UnitPreferencesScreen> {
             currentValue: _preferences.volumeUnit,
             options: [
               {'value': 'metric', 'label': 'Metric', 'example': '"4.5 liters"'},
-              {'value': 'imperial', 'label': 'Imperial', 'example': '"4.5 quarts"'},
+              {
+                'value': 'imperial',
+                'label': 'Imperial',
+                'example': '"4.5 quarts"'
+              },
             ],
             onChanged: (value) => _preferences.volumeUnit = value,
           ),
@@ -633,8 +672,16 @@ class _UnitPreferencesScreenState extends State<UnitPreferencesScreen> {
             subtitle: 'For operating temps, thermostat ratings',
             currentValue: _preferences.temperatureUnit,
             options: [
-              {'value': 'fahrenheit', 'label': 'Fahrenheit', 'example': '"195 degrees Fahrenheit"'},
-              {'value': 'celsius', 'label': 'Celsius', 'example': '"90 degrees Celsius"'},
+              {
+                'value': 'fahrenheit',
+                'label': 'Fahrenheit',
+                'example': '"195 degrees Fahrenheit"'
+              },
+              {
+                'value': 'celsius',
+                'label': 'Celsius',
+                'example': '"90 degrees Celsius"'
+              },
             ],
             onChanged: (value) => _preferences.temperatureUnit = value,
           ),
@@ -645,8 +692,16 @@ class _UnitPreferencesScreenState extends State<UnitPreferencesScreen> {
             subtitle: 'For component weights, vehicle mass',
             currentValue: _preferences.weightUnit,
             options: [
-              {'value': 'imperial', 'label': 'Imperial', 'example': '"15 pounds"'},
-              {'value': 'metric', 'label': 'Metric', 'example': '"7 kilograms"'},
+              {
+                'value': 'imperial',
+                'label': 'Imperial',
+                'example': '"15 pounds"'
+              },
+              {
+                'value': 'metric',
+                'label': 'Metric',
+                'example': '"7 kilograms"'
+              },
             ],
             onChanged: (value) => _preferences.weightUnit = value,
           ),
@@ -657,8 +712,16 @@ class _UnitPreferencesScreenState extends State<UnitPreferencesScreen> {
             subtitle: 'For wrench sizes, socket dimensions',
             currentValue: _preferences.socketUnit,
             options: [
-              {'value': 'metric', 'label': 'Metric', 'example': '"17 millimeter socket"'},
-              {'value': 'imperial', 'label': 'Imperial', 'example': '"11/16 inch socket"'},
+              {
+                'value': 'metric',
+                'label': 'Metric',
+                'example': '"17 millimeter socket"'
+              },
+              {
+                'value': 'imperial',
+                'label': 'Imperial',
+                'example': '"11/16 inch socket"'
+              },
             ],
             onChanged: (value) => _preferences.socketUnit = value,
           ),

@@ -57,7 +57,7 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[800],
-        title: Text(
+        title: const Text(
           'Delete Document',
           style: TextStyle(color: Colors.white),
         ),
@@ -90,7 +90,8 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
       if (appState.userId == null) return;
 
       try {
-        final success = await DocumentService.deleteDocument(document.id, appState.userId!);
+        final success =
+            await DocumentService.deleteDocument(document.id, appState.userId!);
         if (success) {
           setState(() {
             _documents.removeWhere((doc) => doc.id == document.id);
@@ -114,7 +115,8 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
     try {
       _showSuccess('Preparing download...');
 
-      final downloadUrl = await DocumentService.getDownloadUrl(document.id, appState.userId!);
+      final downloadUrl =
+          await DocumentService.getDownloadUrl(document.id, appState.userId!);
 
       if (downloadUrl != null) {
         // Open the download URL in browser/system handler
@@ -172,8 +174,8 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
     return _documents.where((doc) {
       final query = _searchQuery.toLowerCase();
       return doc.title.toLowerCase().contains(query) ||
-             doc.carInfo.toLowerCase().contains(query) ||
-             doc.tags.any((tag) => tag.toLowerCase().contains(query));
+          doc.carInfo.toLowerCase().contains(query) ||
+          doc.tags.any((tag) => tag.toLowerCase().contains(query));
     }).toList();
   }
 
@@ -299,9 +301,9 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
                 Text(
                   'Document Library',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
                 const Spacer(),
                 Chip(
@@ -337,9 +339,11 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
                 Text(
                   '${_stats!.storageUsagePercent.toStringAsFixed(1)}%',
                   style: TextStyle(
-                    color: _stats!.isAtLimit ? Colors.red :
-                          _stats!.isNearLimit ? Colors.orange :
-                          Colors.grey[400],
+                    color: _stats!.isAtLimit
+                        ? Colors.red
+                        : _stats!.isNearLimit
+                            ? Colors.orange
+                            : Colors.grey[400],
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
@@ -351,9 +355,11 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
               value: _stats!.storageUsagePercent / 100,
               backgroundColor: Colors.grey[700],
               valueColor: AlwaysStoppedAnimation<Color>(
-                _stats!.isAtLimit ? Colors.red :
-                _stats!.isNearLimit ? Colors.orange :
-                Colors.blue,
+                _stats!.isAtLimit
+                    ? Colors.red
+                    : _stats!.isNearLimit
+                        ? Colors.orange
+                        : Colors.blue,
               ),
             ),
           ],
@@ -378,8 +384,8 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
                 ? 'No documents found'
                 : 'No documents uploaded yet',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: Colors.grey[400],
-            ),
+                  color: Colors.grey[400],
+                ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -387,8 +393,8 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
                 ? 'Try adjusting your search terms'
                 : 'Upload your first service manual or repair guide',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[500],
-            ),
+                  color: Colors.grey[500],
+                ),
             textAlign: TextAlign.center,
           ),
           if (_searchQuery.isEmpty) ...[
@@ -408,7 +414,8 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue[600],
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
               icon: const Icon(Icons.upload_file),
               label: const Text('Upload Document'),
@@ -452,9 +459,9 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
                   child: Text(
                     document.title,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -495,7 +502,7 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  '${document.fileSizeFormatted}',
+                  document.fileSizeFormatted,
                   style: TextStyle(
                     color: Colors.grey[400],
                     fontSize: 12,
@@ -535,23 +542,27 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
               Wrap(
                 spacing: 6,
                 runSpacing: 4,
-                children: document.tags.map((tag) => Chip(
-                  label: Text(
-                    tag,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                    ),
-                  ),
-                  backgroundColor: Colors.grey[700],
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                )).toList(),
+                children: document.tags
+                    .map((tag) => Chip(
+                          label: Text(
+                            tag,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                            ),
+                          ),
+                          backgroundColor: Colors.grey[700],
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ))
+                    .toList(),
               ),
             ],
 
             // Error message
-            if (document.status == DocumentStatus.error && document.errorMessage != null) ...[
+            if (document.status == DocumentStatus.error &&
+                document.errorMessage != null) ...[
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(8),
@@ -562,7 +573,7 @@ class _DocumentLibraryScreenState extends State<DocumentLibraryScreen> {
                 ),
                 child: Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.error_outline,
                       size: 16,
                       color: Colors.red,

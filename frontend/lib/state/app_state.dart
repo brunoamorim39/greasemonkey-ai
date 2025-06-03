@@ -29,13 +29,15 @@ class UnitPreferences {
   String socketUnit;
 
   UnitPreferences({
-    this.torqueUnit = 'newton_meters',  // "newton_meters" or "pound_feet"
-    this.pressureUnit = 'psi',  // "psi", "bar", "kilopascals"
-    this.lengthUnit = 'metric',  // "metric" (mm, cm, m) or "imperial" (inches, feet)
-    this.volumeUnit = 'metric',  // "metric" (liters, ml) or "imperial" (quarts, gallons, ounces)
-    this.temperatureUnit = 'fahrenheit',  // "celsius" or "fahrenheit"
-    this.weightUnit = 'imperial',  // "metric" (kg, g) or "imperial" (lbs, oz)
-    this.socketUnit = 'metric',  // "metric" (mm) or "imperial" (inches)
+    this.torqueUnit = 'newton_meters', // "newton_meters" or "pound_feet"
+    this.pressureUnit = 'psi', // "psi", "bar", "kilopascals"
+    this.lengthUnit =
+        'metric', // "metric" (mm, cm, m) or "imperial" (inches, feet)
+    this.volumeUnit =
+        'metric', // "metric" (liters, ml) or "imperial" (quarts, gallons, ounces)
+    this.temperatureUnit = 'fahrenheit', // "celsius" or "fahrenheit"
+    this.weightUnit = 'imperial', // "metric" (kg, g) or "imperial" (lbs, oz)
+    this.socketUnit = 'metric', // "metric" (mm) or "imperial" (inches)
   });
 
   Map<String, dynamic> toJson() {
@@ -73,10 +75,10 @@ class AppState extends ChangeNotifier {
 
   // Pagination support for query history
   static const int _messagesPerPage = 20;
-  Map<String, int> _currentMessagePages = {};
-  Map<String, bool> _hasMoreMessages = {};
-  Map<String, bool> _isLoadingMessages = {};
-  Map<String, List<Map<String, String>>> _visibleQueryHistory = {};
+  final Map<String, int> _currentMessagePages = {};
+  final Map<String, bool> _hasMoreMessages = {};
+  final Map<String, bool> _isLoadingMessages = {};
+  final Map<String, List<Map<String, String>>> _visibleQueryHistory = {};
 
   List<Vehicle> get vehicles => List.unmodifiable(_vehicles);
   Vehicle? get activeVehicle => _activeVehicle;
@@ -113,7 +115,9 @@ class AppState extends ChangeNotifier {
 
   // Helper method to generate a consistent vehicle ID
   String _getVehicleId(Vehicle vehicle) {
-    return '${vehicle.name}_${vehicle.engine}'.replaceAll(' ', '_').toLowerCase();
+    return '${vehicle.name}_${vehicle.engine}'
+        .replaceAll(' ', '_')
+        .toLowerCase();
   }
 
   AppState() {
@@ -155,7 +159,8 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final success = await VehicleService.addVehicle(_userId!, vehicle, _vehicles);
+      final success =
+          await VehicleService.addVehicle(_userId!, vehicle, _vehicles);
       if (success) {
         _vehicles.add(vehicle);
 
@@ -208,7 +213,8 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final success = await VehicleService.updateVehicle(_userId!, index, updatedVehicle, _vehicles);
+      final success = await VehicleService.updateVehicle(
+          _userId!, index, updatedVehicle, _vehicles);
       if (success) {
         final oldVehicle = _vehicles[index];
         _vehicles[index] = updatedVehicle;
@@ -268,7 +274,8 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final success = await VehicleService.removeVehicle(_userId!, index, _vehicles);
+      final success =
+          await VehicleService.removeVehicle(_userId!, index, _vehicles);
       if (success) {
         final removedVehicle = _vehicles.removeAt(index);
 
@@ -373,7 +380,8 @@ class AppState extends ChangeNotifier {
         if (_activeVehicle == null && _vehicles.isNotEmpty) {
           _activeVehicle = _vehicles.first;
           _initializePaginationForVehicle(_vehicles.first);
-          debugPrint('Saved vehicle not found, defaulting to: ${_vehicles.first.name}');
+          debugPrint(
+              'Saved vehicle not found, defaulting to: ${_vehicles.first.name}');
         }
       } else if (_vehicles.isNotEmpty) {
         // No saved vehicle, default to first one
@@ -428,7 +436,8 @@ class AppState extends ChangeNotifier {
   Future<void> updateUnitPreferences(UnitPreferences newPreferences) async {
     _unitPreferences = newPreferences;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('unit_preferences', json.encode(_unitPreferences.toJson()));
+    await prefs.setString(
+        'unit_preferences', json.encode(_unitPreferences.toJson()));
     notifyListeners();
   }
 
@@ -463,7 +472,9 @@ class AppState extends ChangeNotifier {
         _vehicleQueryHistory = {};
         for (var entry in decoded.entries) {
           final vehicleId = entry.key;
-          final queries = (entry.value as List).map((e) => Map<String, String>.from(e)).toList();
+          final queries = (entry.value as List)
+              .map((e) => Map<String, String>.from(e))
+              .toList();
           _vehicleQueryHistory[vehicleId] = queries;
         }
       } catch (e) {
@@ -472,9 +483,11 @@ class AppState extends ChangeNotifier {
           final List<dynamic> decoded = json.decode(data);
           if (decoded.isNotEmpty && _activeVehicle != null) {
             final vehicleId = _getVehicleId(_activeVehicle!);
-            _vehicleQueryHistory[vehicleId] = decoded.map((e) => Map<String, String>.from(e)).toList();
+            _vehicleQueryHistory[vehicleId] =
+                decoded.map((e) => Map<String, String>.from(e)).toList();
             // Save in new format
-            await prefs.setString('query_history', json.encode(_vehicleQueryHistory));
+            await prefs.setString(
+                'query_history', json.encode(_vehicleQueryHistory));
           }
         } catch (e2) {
           print('Error loading query history: $e2');
@@ -573,14 +586,17 @@ class AppState extends ChangeNotifier {
 
   void _loadNextMessagePageForVehicle(String vehicleId) {
     if ((_hasMoreMessages[vehicleId] ?? false) == false ||
-        (_isLoadingMessages[vehicleId] ?? false) == true) return;
+        (_isLoadingMessages[vehicleId] ?? false) == true) {
+      return;
+    }
 
     _isLoadingMessages[vehicleId] = true;
 
     final currentPage = _currentMessagePages[vehicleId] ?? 0;
     final vehicleHistory = _vehicleQueryHistory[vehicleId] ?? [];
     final startIndex = currentPage * _messagesPerPage;
-    final endIndex = (startIndex + _messagesPerPage).clamp(0, vehicleHistory.length);
+    final endIndex =
+        (startIndex + _messagesPerPage).clamp(0, vehicleHistory.length);
 
     if (startIndex >= vehicleHistory.length) {
       _hasMoreMessages[vehicleId] = false;
