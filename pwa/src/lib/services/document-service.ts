@@ -148,7 +148,7 @@ export class DocumentService {
       const storagePath = `${userId}/${filename}`
 
       // Upload file to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
         .upload(storagePath, file, {
           cacheControl: '3600',

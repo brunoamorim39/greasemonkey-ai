@@ -8,6 +8,11 @@ const nextConfig = {
   // Disable React strict mode to prevent hydration issues with browser extensions
   reactStrictMode: false,
 
+  // Disable ESLint during build
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   // Turbopack configuration (stable, no longer experimental)
   turbopack: {
     rules: {

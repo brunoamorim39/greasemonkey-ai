@@ -28,8 +28,10 @@ export function validateApiKey(request: NextRequest): { isValid: boolean; error?
   return { isValid: true }
 }
 
-export function withAuth(handler: (request: NextRequest, ...args: any[]) => Promise<NextResponse>) {
-  return async (request: NextRequest, ...args: any[]): Promise<NextResponse> => {
+export function withAuth<T extends unknown[]>(
+  handler: (request: NextRequest, ...args: T) => Promise<NextResponse>
+) {
+  return async (request: NextRequest, ...args: T): Promise<NextResponse> => {
     const authResult = validateApiKey(request)
 
     if (!authResult.isValid) {

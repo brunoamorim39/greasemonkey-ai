@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useRef } from 'react'
 import { Mic, Send, Volume2, StopCircle } from 'lucide-react'
 import { Button } from './ui/Button'
 import { Card, CardContent } from './ui/Card'
@@ -142,7 +142,7 @@ export function ChatInterface({
               )}
             </div>
 
-            <div className="prose prose-zinc prose-invert max-w-none">
+            <div className="space-y-3 max-w-none">
               {answer.split('\n').map((line, index) => (
                 <p key={index} className="mb-3 text-zinc-200 leading-relaxed last:mb-0">
                   {line || '\u00A0'}

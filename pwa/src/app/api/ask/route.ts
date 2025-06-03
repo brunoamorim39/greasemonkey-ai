@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { config } from '@/lib/config'
+import { withAuth } from '@/lib/auth'
 import { userService } from '@/lib/services/user-service'
 import { vehicleService } from '@/lib/services/vehicle-service'
 import { documentService } from '@/lib/services/document-service'
-import { withAuth } from '@/lib/auth'
 
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
@@ -12,34 +12,38 @@ const openai = new OpenAI({
   project: config.openai.project,
 })
 
+interface SearchResult {
+  document: {
+    original_filename: string
+  }
+  content: string
+}
+
+interface UserPreferences {
+  torque_unit?: string
+  pressure_unit?: string
+  length_unit?: string
+  volume_unit?: string
+  temperature_unit?: string
+}
+
 async function askHandler(request: NextRequest) {
   const startTime = Date.now()
 
   try {
-    const body = await request.json()
-    const {
-      question,
-      userId = config.app.defaultUserId,
-      vehicleId,
-      includeDocuments = true
-    } = body
+    const { question, vehicleId, includeDocuments = true } = await request.json()
 
-    // Validate input
-    if (!question || typeof question !== 'string') {
-      return NextResponse.json(
-        { error: 'Question is required and must be a string' },
-        { status: 400 }
-      )
+    if (!question?.trim()) {
+      return NextResponse.json({ error: 'Question is required' }, { status: 400 })
     }
 
-    if (question.length > config.limits.maxQuestionLength) {
-      return NextResponse.json(
-        { error: `Question too long. Maximum ${config.limits.maxQuestionLength} characters allowed.` },
-        { status: 400 }
-      )
+    // Get user from auth context
+    const userId = (request as any).userId
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check usage limits before processing
+    // Check rate limits and usage
     const usageCheck = await userService.checkUsageLimit(userId, 'ask')
     if (!usageCheck.allowed) {
       return NextResponse.json(
@@ -74,7 +78,7 @@ async function askHandler(request: NextRequest) {
 
     // Search user documents for relevant context
     let documentContext = ''
-    let searchResults: any[] = []
+    let searchResults: SearchResult[] = []
     if (includeDocuments) {
       searchResults = await documentService.searchDocuments(userId, {
         query: question,
@@ -194,7 +198,7 @@ ${unitInstructions}${vehicleContext}${documentContext}`
 // Export the authenticated handler
 export const POST = withAuth(askHandler)
 
-function createUnitInstructions(preferences: any): string {
+function createUnitInstructions(preferences: UserPreferences): string {
   const instructions = [
     '\nUNIT PREFERENCES & TTS FORMATTING:',
     '- Write out all numbers clearly for speech synthesis',

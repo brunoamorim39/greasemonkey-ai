@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { vehicleService } from '@/lib/services/vehicle-service'
 import { config } from '@/lib/config'
-import { withAuth } from '@/lib/auth'
+import { validateApiKey } from '@/lib/auth'
 
-async function getVehicleHandler(
+export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  // Handle authentication
+  const authResult = validateApiKey(request)
+  if (!authResult.isValid) {
+    return NextResponse.json(
+      { error: authResult.error },
+      { status: 401 }
+    )
+  }
+
   try {
+    const { id } = await params
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId') || config.app.defaultUserId
 
-    const vehicle = await vehicleService.getVehicle(userId, params.id)
+    const vehicle = await vehicleService.getVehicle(userId, id)
 
     if (!vehicle) {
       return NextResponse.json(
@@ -30,11 +40,21 @@ async function getVehicleHandler(
   }
 }
 
-async function updateVehicleHandler(
+export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  // Handle authentication
+  const authResult = validateApiKey(request)
+  if (!authResult.isValid) {
+    return NextResponse.json(
+      { error: authResult.error },
+      { status: 401 }
+    )
+  }
+
   try {
+    const { id } = await params
     const body = await request.json()
     const { userId = config.app.defaultUserId, ...vehicleData } = body
 
@@ -57,7 +77,7 @@ async function updateVehicleHandler(
       )
     }
 
-    const vehicle = await vehicleService.updateVehicle(userId, params.id, vehicleData)
+    const vehicle = await vehicleService.updateVehicle(userId, id, vehicleData)
 
     if (!vehicle) {
       return NextResponse.json(
@@ -76,15 +96,25 @@ async function updateVehicleHandler(
   }
 }
 
-async function deleteVehicleHandler(
+export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  // Handle authentication
+  const authResult = validateApiKey(request)
+  if (!authResult.isValid) {
+    return NextResponse.json(
+      { error: authResult.error },
+      { status: 401 }
+    )
+  }
+
   try {
+    const { id } = await params
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId') || config.app.defaultUserId
 
-    const success = await vehicleService.deleteVehicle(userId, params.id)
+    const success = await vehicleService.deleteVehicle(userId, id)
 
     if (!success) {
       return NextResponse.json(
@@ -102,7 +132,3 @@ async function deleteVehicleHandler(
     )
   }
 }
-
-export const GET = withAuth(getVehicleHandler)
-export const PUT = withAuth(updateVehicleHandler)
-export const DELETE = withAuth(deleteVehicleHandler)

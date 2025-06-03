@@ -38,7 +38,7 @@ export async function apiGet(url: string, requireAuth = true): Promise<Response>
 
 export async function apiPost(
   url: string,
-  data?: any,
+  data?: unknown,
   requireAuth = true
 ): Promise<Response> {
   const body = data ? JSON.stringify(data) : undefined
@@ -47,7 +47,7 @@ export async function apiPost(
 
 export async function apiPut(
   url: string,
-  data?: any,
+  data?: unknown,
   requireAuth = true
 ): Promise<Response> {
   const body = data ? JSON.stringify(data) : undefined

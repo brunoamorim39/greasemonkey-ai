@@ -108,23 +108,6 @@ body {
   @apply focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-zinc-900;
 }
 
-/* Prose improvements */
-.prose-enhanced {
-  @apply prose prose-zinc prose-invert max-w-none;
-}
-
-.prose-enhanced p {
-  @apply text-zinc-200 leading-relaxed mb-4;
-}
-
-.prose-enhanced strong {
-  @apply text-white font-semibold;
-}
-
-.prose-enhanced code {
-  @apply bg-zinc-800 text-orange-400 px-1.5 py-0.5 rounded text-sm;
-}
-
 /* Button hover effects */
 .btn-hover-lift {
   @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl;

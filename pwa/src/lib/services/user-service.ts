@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { Database, UnitPreferences, UserTier, SubscriptionStatus, UsageStats, UsageType } from '../supabase/types'
+import { Database, UnitPreferences, UserTier, UsageStats, UsageType } from '../supabase/types'
 import { TIER_LIMITS } from '../config'
 
 const supabase = createClient<Database>(
@@ -126,7 +126,7 @@ export class UserService {
     }
   }
 
-  async trackUsage(userId: string, usageType: UsageType, details?: any): Promise<boolean> {
+  async trackUsage(userId: string, usageType: UsageType, details?: Record<string, unknown>): Promise<boolean> {
     try {
       const today = new Date().toISOString().split('T')[0]
 
@@ -327,7 +327,7 @@ export class UserService {
     }
   }
 
-  async logQuery(userId: string, question: string, response: string, vehicleContext?: any, responseTimeMs?: number): Promise<void> {
+  async logQuery(userId: string, question: string, response: string, vehicleContext?: Record<string, unknown>, responseTimeMs?: number): Promise<void> {
     try {
       const { error } = await supabase
         .from('query_logs')

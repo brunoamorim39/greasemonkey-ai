@@ -74,7 +74,7 @@ async function uploadDocumentHandler(request: NextRequest) {
 
     const uploadRequest = {
       file,
-      document_type: documentType as any,
+      document_type: documentType as 'service_manual' | 'repair_manual' | 'owners_manual' | 'parts_catalog' | 'wiring_diagram' | 'other',
       car_make: carMake,
       car_model: carModel,
       car_year: carYear ? parseInt(carYear) : undefined,
