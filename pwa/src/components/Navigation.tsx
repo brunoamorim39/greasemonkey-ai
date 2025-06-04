@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Mic, Car, FileText, BarChart3, Settings, Menu, X } from 'lucide-react'
+import { Mic, Car, FileText, Settings, Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type TabType = 'chat' | 'garage' | 'documents' | 'stats' | 'settings'
+export type TabType = 'chat' | 'garage' | 'documents' | 'settings'
 
 interface NavigationProps {
   activeTab: TabType
@@ -14,7 +14,6 @@ const tabs = [
   { id: 'chat' as const, label: 'Chat', icon: Mic },
   { id: 'garage' as const, label: 'Garage', icon: Car },
   { id: 'documents' as const, label: 'Documents', icon: FileText },
-  { id: 'stats' as const, label: 'Stats', icon: BarChart3 },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 

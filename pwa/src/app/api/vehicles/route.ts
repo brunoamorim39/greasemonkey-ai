@@ -23,7 +23,7 @@ async function getVehiclesHandler(request: NextRequest) {
 async function createVehicleHandler(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId = config.app.defaultUserId, ...vehicleData } = body
+    const { userId = config.app.defaultUserId, displayName, ...vehicleData } = body
 
     // Validate required fields
     if (!vehicleData.make || !vehicleData.model || !vehicleData.year) {

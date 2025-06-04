@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export function validateApiKey(request: NextRequest): { isValid: boolean; error?: string } {
-  const apiKey = process.env.API_KEY
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY
 
   // If no API key is configured, allow all requests (development mode)
   if (!apiKey) {

@@ -1,28 +1,28 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { apiGet, apiPost, apiDelete, apiPostFormData } from '@/lib/api-client'
+import { apiGet, apiPost, apiDelete, apiPostFormData, apiPut } from '@/lib/api-client'
 import ClientOnly from '@/components/ClientOnly'
+import { AuthGuard } from '@/components/AuthGuard'
 import { Navigation, TabType } from '@/components/Navigation'
-import { ChatInterface } from '@/components/ChatInterface'
-import { VehicleSelector } from '@/components/VehicleSelector'
+import { VoiceInterface } from '@/components/VoiceInterface'
+import { VehicleManager } from '@/components/VehicleManager'
+import { DocumentManager } from '@/components/DocumentManager'
+import { SettingsPage } from '@/components/SettingsPage'
+import { PricingPlans } from '@/components/PricingPlans'
 import { UsageStatus } from '@/components/UsageStatus'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import {
+  Mic,
+  MessageSquare,
+  Keyboard,
+  Volume2,
+  Sparkles,
   Car,
-  FileText,
-  Plus,
-  Trash2,
-  Upload,
-  BarChart3,
-  User,
-  Crown,
-  Zap,
-  AlertCircle,
-  CheckCircle,
-  Clock
+  ChevronDown,
+  Heart
 } from 'lucide-react'
 
 const DEFAULT_USER_ID = 'demo-user'
@@ -30,9 +30,14 @@ const DEFAULT_USER_ID = 'demo-user'
 interface Vehicle {
   id: string
   displayName: string
+  nickname?: string
   make: string
   model: string
   year: number
+  trim?: string
+  engine?: string
+  notes?: string
+  mileage?: number
 }
 
 interface Document {
@@ -42,6 +47,8 @@ interface Document {
   status: string
   sizeMB: string
   createdAt: string
+  category?: string
+  description?: string
 }
 
 interface UserStats {
@@ -67,34 +74,50 @@ interface UserStats {
   }
 }
 
-export default function Home() {
+interface ConversationMessage {
+  id: string
+  question: string
+  answer: string
+  audioUrl?: string
+  timestamp: Date
+  vehicleId?: string
+  vehicleContext?: string
+}
+
+function MainApp() {
+  // Voice and audio state
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [question, setQuestion] = useState('')
-  const [answer, setAnswer] = useState('')
-  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  // Current conversation
+  const [currentQuestion, setCurrentQuestion] = useState('')
+  const [currentAnswer, setCurrentAnswer] = useState('')
+  const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null)
+
+  // Conversation history
+  const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([])
+
+  // App state
   const [selectedVehicle, setSelectedVehicle] = useState<string>('')
   const [activeTab, setActiveTab] = useState<TabType>('chat')
   const [userStats, setUserStats] = useState<UserStats | null>(null)
-  const [newVehicle, setNewVehicle] = useState({
-    make: '',
-    model: '',
-    year: '',
-    trim: '',
-    engine: '',
-    vin: '',
-    notes: ''
-  })
-  const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [documentType, setDocumentType] = useState('service_manual')
+  const [showTextInput, setShowTextInput] = useState(false)
+  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false)
+  const [showPricing, setShowPricing] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadUserStats()
+    loadConversationHistory()
   }, [])
+
+  useEffect(() => {
+    // Save conversation history when it changes
+    saveConversationHistory(conversationHistory)
+  }, [conversationHistory])
 
   const loadUserStats = async () => {
     try {
@@ -102,9 +125,110 @@ export default function Home() {
       if (response.ok) {
         const stats = await response.json()
         setUserStats(stats)
+
+        // Auto-select the first vehicle if none selected
+        if (stats.vehicles.vehicles.length > 0 && !selectedVehicle) {
+          setSelectedVehicle(stats.vehicles.vehicles[0].id)
+        }
       }
     } catch (error) {
       console.error('Failed to load user stats:', error)
+    }
+  }
+
+  const loadConversationHistory = () => {
+    try {
+      const saved = localStorage.getItem('greasemonkey-conversation-history')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        setConversationHistory(parsed.map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        })))
+      }
+    } catch (error) {
+      console.error('Failed to load conversation history:', error)
+    }
+  }
+
+  const saveConversationHistory = (messages: ConversationMessage[]) => {
+    try {
+      localStorage.setItem('greasemonkey-conversation-history', JSON.stringify(messages))
+    } catch (error) {
+      console.error('Failed to save conversation history:', error)
+    }
+  }
+
+  const addToConversationHistory = (question: string, answer: string, audioUrl?: string) => {
+    const newMessage: ConversationMessage = {
+      id: Date.now().toString(),
+      question,
+      answer,
+      audioUrl,
+      timestamp: new Date(),
+      vehicleId: selectedVehicle || undefined,
+      vehicleContext: selectedVehicle ? getSelectedVehicleDisplayName() : undefined
+    }
+
+    const updatedHistory = [newMessage, ...conversationHistory].slice(0, 50) // Keep last 50 messages
+    setConversationHistory(updatedHistory)
+  }
+
+  const clearConversationHistory = async () => {
+    setConversationHistory([])
+    localStorage.removeItem('greasemonkey-conversation-history')
+    // Also clear current conversation
+    setCurrentQuestion('')
+    setCurrentAnswer('')
+    setCurrentAudioUrl(null)
+  }
+
+  const getSelectedVehicle = () => {
+    return userStats?.vehicles.vehicles.find(v => v.id === selectedVehicle)
+  }
+
+  const getSelectedVehicleDisplayName = () => {
+    const vehicle = getSelectedVehicle()
+    if (!vehicle) return ''
+
+    const displayName = `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.trim ? ` ${vehicle.trim}` : ''}`
+
+    if (vehicle.nickname) {
+      return `${vehicle.nickname} (${displayName})`
+    }
+    return displayName
+  }
+
+  // Filter conversation history by selected vehicle
+  const getVehicleConversationHistory = () => {
+    if (!selectedVehicle) return []
+    return conversationHistory.filter(msg => msg.vehicleId === selectedVehicle)
+  }
+
+  const handleSelectPlan = (planId: string, billingType: 'monthly' | 'yearly') => {
+    // This would integrate with Stripe or your payment processor
+    console.log(`User selected plan: ${planId} (${billingType})`)
+    // For now, just close the pricing modal
+    setShowPricing(false)
+  }
+
+  const handleSignOut = async () => {
+    try {
+      // Clear local storage first
+      localStorage.removeItem('greasemonkey-user')
+      localStorage.removeItem('greasemonkey-conversation-history')
+      localStorage.removeItem('greasemonkey-settings')
+
+      // Actually sign out from Supabase
+      const { signOut } = await import('@/lib/supabase')
+      await signOut()
+
+      // Force reload to trigger AuthGuard re-evaluation
+      window.location.href = window.location.href
+    } catch (error) {
+      console.error('Sign out error:', error)
+      // Even if sign out fails, force reload to reset state
+      window.location.href = window.location.href
     }
   }
 
@@ -129,7 +253,7 @@ export default function Home() {
       setIsRecording(true)
     } catch (error) {
       console.error('Error starting recording:', error)
-      alert('Could not access microphone')
+      alert('Could not access microphone. Please check permissions.')
     }
   }
 
@@ -137,6 +261,14 @@ export default function Home() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop()
       setIsRecording(false)
+    }
+  }
+
+  const discardRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+      // Don't process the audio
     }
   }
 
@@ -151,24 +283,27 @@ export default function Home() {
 
       if (response.ok) {
         const data = await response.json()
-        setQuestion(data.text || '')
-        await askQuestion(data.text)
+        const questionText = data.text || ''
+        setCurrentQuestion(questionText)
+        await askQuestion(questionText)
       } else {
         console.error('Transcription failed')
+        setCurrentAnswer('❌ Sorry, I couldn\'t understand your question. Please try again.')
       }
     } catch (error) {
       console.error('Error transcribing audio:', error)
+      setCurrentAnswer('❌ Sorry, there was an error processing your voice. Please try again.')
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const askQuestion = async (questionText: string = question) => {
+  const askQuestion = async (questionText: string = currentQuestion) => {
     if (!questionText.trim()) return
 
     setIsProcessing(true)
-    setAnswer('')
-    setAudioUrl(null)
+    setCurrentAnswer('')
+    setCurrentAudioUrl(null)
 
     try {
       const response = await apiPost('/api/ask', {
@@ -181,15 +316,18 @@ export default function Home() {
 
       if (data.error) {
         if (data.upgrade_required) {
-          setAnswer(`❌ ${data.error}\n\n🚀 Upgrade your plan to continue asking questions and unlock premium features!`)
+          setCurrentAnswer(`❌ ${data.error}\n\n🚀 Upgrade your plan to continue asking questions and unlock premium features!`)
         } else {
-          setAnswer(`❌ ${data.error}`)
+          setCurrentAnswer(`❌ ${data.error}`)
         }
       } else {
-        setAnswer(data.response)
+        setCurrentAnswer(data.response)
         if (data.audioUrl) {
-          setAudioUrl(data.audioUrl)
+          setCurrentAudioUrl(data.audioUrl)
         }
+
+        // Add to conversation history
+        addToConversationHistory(questionText, data.response, data.audioUrl)
       }
 
       if (!data.error) {
@@ -197,43 +335,66 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error:', error)
-      setAnswer('❌ Sorry, there was an error processing your request.')
+      setCurrentAnswer('❌ Sorry, there was an error processing your request.')
     } finally {
       setIsProcessing(false)
     }
   }
 
   const playAudio = () => {
-    if (audioRef.current && audioUrl) {
-      audioRef.current.src = audioUrl
+    if (audioRef.current && currentAudioUrl) {
+      setIsPlaying(true)
       audioRef.current.play()
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleTextSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!currentQuestion.trim() || isProcessing) return
     await askQuestion()
   }
 
-  const createVehicle = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Vehicle management
+  const createVehicle = async (vehicleData: Omit<Vehicle, 'id'>) => {
     try {
-      const response = await apiPost('/api/vehicles', {
-        make: newVehicle.make,
-        model: newVehicle.model,
-        year: parseInt(newVehicle.year),
-        trim: newVehicle.trim || undefined,
-        engine: newVehicle.engine || undefined,
-        vin: newVehicle.vin || undefined,
-        notes: newVehicle.notes || undefined,
-      })
-
+      const response = await apiPost('/api/vehicles', vehicleData)
       if (response.ok) {
-        setNewVehicle({ make: '', model: '', year: '', trim: '', engine: '', vin: '', notes: '' })
-        loadUserStats()
+        await loadUserStats()
+      } else {
+        const errorData = await response.text()
+        console.error('Error creating vehicle:', errorData)
+
+        // Check if it's a vehicle limit error
+        if (response.status === 429 && errorData.includes('Vehicle limit reached')) {
+          // Extract the tier info for better messaging
+          const tier = userStats?.tier || 'current plan'
+          const tierName = tier === 'free_tier' ? 'Free Tier' :
+                          tier === 'weekend_warrior' ? 'Weekend Warrior' :
+                          tier === 'master_tech' ? 'Master Tech' : tier
+
+          alert(`Vehicle limit reached for ${tierName}. Please upgrade your plan to add more vehicles to your garage.`)
+          return
+        }
+
+        throw new Error('Failed to create vehicle')
       }
     } catch (error) {
-      console.error('Failed to create vehicle:', error)
+      console.error('Error creating vehicle:', error)
+      throw error
+    }
+  }
+
+  const updateVehicle = async (id: string, updates: Partial<Vehicle>) => {
+    try {
+      const response = await apiPut(`/api/vehicles/${id}`, updates)
+      if (response.ok) {
+        await loadUserStats()
+      } else {
+        throw new Error('Failed to update vehicle')
+      }
+    } catch (error) {
+      console.error('Error updating vehicle:', error)
+      throw error
     }
   }
 
@@ -241,64 +402,67 @@ export default function Home() {
     try {
       const response = await apiDelete(`/api/vehicles/${vehicleId}`)
       if (response.ok) {
-        loadUserStats()
+        if (selectedVehicle === vehicleId) {
+          setSelectedVehicle('')
+        }
+        await loadUserStats()
+      } else {
+        throw new Error('Failed to delete vehicle')
       }
     } catch (error) {
-      console.error('Failed to delete vehicle:', error)
+      console.error('Error deleting vehicle:', error)
+      throw error
     }
   }
 
-  const uploadDocument = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!uploadFile) return
-
+  // Document management
+  const uploadDocument = async (file: File, category: string, description?: string) => {
     try {
       const formData = new FormData()
-      formData.append('file', uploadFile)
-      formData.append('type', documentType)
+      formData.append('file', file)
+      formData.append('type', category)
+      if (description) {
+        formData.append('description', description)
+      }
 
       const response = await apiPostFormData('/api/documents', formData)
-
       if (response.ok) {
-        setUploadFile(null)
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ''
+        await loadUserStats()
+      } else {
+        const errorData = await response.json()
+
+        // Check if it's a document limit error
+        if (response.status === 429 && errorData.error && errorData.error.includes('limit')) {
+          // Extract the tier info for better messaging
+          const tier = userStats?.tier || 'current plan'
+          const tierName = tier === 'free_tier' ? 'Free Tier' :
+                          tier === 'weekend_warrior' ? 'Weekend Warrior' :
+                          tier === 'master_tech' ? 'Master Tech' : tier
+
+          alert(`Document limit reached for ${tierName}. Please upgrade your plan to upload more documents.`)
+          return
         }
-        loadUserStats()
+
+        throw new Error(errorData.error || 'Failed to upload document')
       }
     } catch (error) {
-      console.error('Failed to upload document:', error)
+      console.error('Error uploading document:', error)
+      throw error
     }
   }
 
-  const getTierDisplayName = (tier: string) => {
-    const tierMap: Record<string, string> = {
-      free_tier: 'Free',
-      weekend_warrior: 'Weekend Warrior',
-      master_tech: 'Master Tech'
+  const deleteDocument = async (documentId: string) => {
+    try {
+      const response = await apiDelete(`/api/documents/${documentId}`)
+      if (response.ok) {
+        await loadUserStats()
+      } else {
+        throw new Error('Failed to delete document')
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error)
+      throw error
     }
-    return tierMap[tier] || tier
-  }
-
-  const getTierIcon = (tier: string) => {
-    switch (tier) {
-      case 'free_tier':
-        return <User className="h-5 w-5" />
-      case 'weekend_warrior':
-        return <Zap className="h-5 w-5" />
-      case 'master_tech':
-        return <Crown className="h-5 w-5" />
-      default:
-        return <User className="h-5 w-5" />
-    }
-  }
-
-  const getUsageColor = (current: number, limit?: number) => {
-    if (!limit) return 'text-green-400'
-    const percentage = (current / limit) * 100
-    if (percentage >= 90) return 'text-red-400'
-    if (percentage >= 70) return 'text-yellow-400'
-    return 'text-green-400'
   }
 
   // Layout wrapper for all tabs
@@ -314,7 +478,7 @@ export default function Home() {
                 </div>
                 <div>
                   <CardTitle className="text-gradient">GreaseMonkey AI</CardTitle>
-                  <p className="text-zinc-400 mt-1">Your intelligent automotive assistant</p>
+                  <p className="text-zinc-400 mt-1">Your voice-first automotive assistant</p>
                 </div>
               </div>
 
@@ -332,40 +496,276 @@ export default function Home() {
         </Card>
       </div>
 
-      {audioUrl && (
-        <audio ref={audioRef} src={audioUrl} className="hidden" />
+      {currentAudioUrl && (
+        <audio
+          ref={audioRef}
+          src={currentAudioUrl}
+          className="hidden"
+          onEnded={() => setIsPlaying(false)}
+          onPause={() => setIsPlaying(false)}
+        />
+      )}
+
+      {/* Pricing Modal */}
+      {showPricing && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 rounded-2xl border border-zinc-700 max-w-7xl w-full max-h-[90vh] overflow-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white">Choose Your Plan</h2>
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowPricing(false)}
+                  className="p-2"
+                >
+                  ✕
+                </Button>
+              </div>
+              <PricingPlans
+                currentPlan={userStats?.tier || 'free'}
+                onSelectPlan={handleSelectPlan}
+                showCurrentPlan={true}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
 
-  // Chat Tab
+  // Chat Tab - Voice-First Interface
   if (activeTab === 'chat') {
+    const vehicleHistory = getVehicleConversationHistory()
+    const hasConversationHistory = vehicleHistory.length > 0 || currentAnswer
+
     return (
       <PageLayout>
+        {/* Vehicle Selection */}
         {userStats && userStats.vehicles.count > 0 && (
-          <VehicleSelector
-            vehicles={userStats.vehicles.vehicles}
-            selectedVehicle={selectedVehicle}
-            onVehicleChange={setSelectedVehicle}
-          />
+          <Card variant="glass">
+            <CardContent className="py-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <span className="text-sm text-zinc-400 shrink-0">Currently asking about:</span>
+                <div className="relative flex-1">
+                  <button
+                    onClick={() => setShowVehicleDropdown(!showVehicleDropdown)}
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl border border-zinc-700 hover:border-zinc-600 transition-all duration-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="bg-gradient-to-r from-orange-500 to-red-500 p-2 rounded-lg">
+                        <Car className="h-4 w-4 text-white" />
+                      </div>
+                      <div className="text-left">
+                        {selectedVehicle ? (
+                          <div>
+                            <div className="text-white font-medium">{getSelectedVehicleDisplayName()}</div>
+                            {getSelectedVehicle()?.nickname && (
+                              <div className="flex items-center gap-1 mt-1">
+                                <Heart className="h-3 w-3 text-pink-400" />
+                                <span className="text-xs text-pink-400">Nickname: {getSelectedVehicle()?.nickname}</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">Select a vehicle</span>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronDown className={`h-5 w-5 text-zinc-400 transition-transform duration-200 ${showVehicleDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showVehicleDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl z-10 max-h-60 overflow-y-auto">
+                      {userStats.vehicles.vehicles.map((vehicle) => (
+                        <button
+                          key={vehicle.id}
+                          onClick={() => {
+                            setSelectedVehicle(vehicle.id)
+                            setShowVehicleDropdown(false)
+                          }}
+                          className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-700 transition-all duration-200 ${
+                            selectedVehicle === vehicle.id ? 'bg-orange-500/10 border-r-2 border-orange-500' : ''
+                          }`}
+                        >
+                          <div className="bg-gradient-to-r from-orange-500 to-red-500 p-2 rounded-lg">
+                            <Car className="h-4 w-4 text-white" />
+                          </div>
+                          <div className="text-left flex-1">
+                            <div className="text-white font-medium">
+                              {vehicle.nickname ? `${vehicle.nickname} (${vehicle.displayName}${vehicle.trim ? ` ${vehicle.trim}` : ''})` : `${vehicle.displayName}${vehicle.trim ? ` ${vehicle.trim}` : ''}`}
+                            </div>
+                            {vehicle.nickname && (
+                              <div className="flex items-center gap-1 mt-1">
+                                <Heart className="h-3 w-3 text-pink-400" />
+                                <span className="text-xs text-pink-400">Nickname</span>
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {userStats && (
           <UsageStatus userStats={userStats} />
         )}
 
-        <ChatInterface
-          question={question}
-          setQuestion={setQuestion}
-          answer={answer}
-          isRecording={isRecording}
-          isProcessing={isProcessing}
-          audioUrl={audioUrl}
-          onStartRecording={startRecording}
-          onStopRecording={stopRecording}
-          onSubmit={handleSubmit}
-          onPlayAudio={playAudio}
-        />
+        {/* Voice-First Interface */}
+        <div className="text-center space-y-6">
+          <VoiceInterface
+            isRecording={isRecording}
+            isProcessing={isProcessing}
+            audioUrl={currentAudioUrl}
+            isPlaying={isPlaying}
+            onStartRecording={startRecording}
+            onStopRecording={stopRecording}
+            onPlayAudio={playAudio}
+            onDiscardRecording={discardRecording}
+            showTips={!hasConversationHistory}
+          />
+
+          {/* Toggle for text input */}
+          <div className="flex items-center justify-center gap-4">
+            <Button
+              variant={showTextInput ? 'ghost' : 'outline'}
+              size="sm"
+              onClick={() => setShowTextInput(!showTextInput)}
+              icon={showTextInput ? <Mic className="h-4 w-4" /> : <Keyboard className="h-4 w-4" />}
+            >
+              {showTextInput ? 'Switch to Voice' : 'Use Keyboard'}
+            </Button>
+          </div>
+
+          {/* Text Input (when enabled) */}
+          {showTextInput && (
+            <Card variant="glass">
+              <CardContent className="py-4">
+                <form onSubmit={handleTextSubmit} className="flex gap-3">
+                  <Input
+                    value={currentQuestion}
+                    onChange={(e) => setCurrentQuestion(e.target.value)}
+                    placeholder="Type your automotive question..."
+                    disabled={isProcessing}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="submit"
+                    disabled={!currentQuestion.trim() || isProcessing}
+                    loading={isProcessing}
+                  >
+                    Ask
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Current Answer */}
+          {currentAnswer && (
+            <Card variant="elevated" className="text-left animate-in slide-in-from-bottom-2 duration-500">
+              <CardContent>
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-gradient-to-r from-orange-500 to-red-500 p-3 rounded-xl shadow-lg">
+                      <Sparkles className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-white text-lg">GreaseMonkey AI</h3>
+                      <p className="text-zinc-400 text-sm">
+                        {selectedVehicle
+                          ? `About your ${getSelectedVehicleDisplayName()}`
+                          : 'General automotive advice'
+                        }
+                      </p>
+                    </div>
+                  </div>
+
+                  {currentAudioUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={playAudio}
+                      icon={<Volume2 className="h-4 w-4" />}
+                      className="shrink-0"
+                    >
+                      Play Audio
+                    </Button>
+                  )}
+                </div>
+
+                <div className="space-y-3 max-w-none">
+                  {currentAnswer.split('\n').map((line, index) => (
+                    <p key={index} className="mb-3 text-zinc-200 leading-relaxed last:mb-0">
+                      {line || '\u00A0'}
+                    </p>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Conversation History for Selected Vehicle */}
+          {vehicleHistory.length > 0 && (
+            <Card variant="glass">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-3">
+                    <MessageSquare className="h-5 w-5 text-orange-500" />
+                    Conversation History
+                    {selectedVehicle && (
+                      <span className="text-sm text-zinc-400">
+                        ({getSelectedVehicleDisplayName()})
+                      </span>
+                    )}
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      // Clear only this vehicle's history
+                      const updatedHistory = conversationHistory.filter(msg => msg.vehicleId !== selectedVehicle)
+                      setConversationHistory(updatedHistory)
+                    }}
+                  >
+                    Clear History
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="max-h-96 overflow-y-auto">
+                <div className="space-y-4">
+                  {vehicleHistory.slice(0, 5).map((message) => (
+                    <div key={message.id} className="p-4 bg-zinc-800/50 rounded-lg">
+                      <div className="text-sm text-zinc-400 mb-2">
+                        {message.timestamp.toLocaleString()}
+                      </div>
+                      <div className="text-orange-300 font-medium mb-2">Q: {message.question}</div>
+                      <div className="text-zinc-300 text-sm line-clamp-3">{message.answer}</div>
+                      {message.audioUrl && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const audio = new Audio(message.audioUrl)
+                            audio.play()
+                          }}
+                          className="mt-2"
+                        >
+                          <Volume2 className="h-4 w-4 mr-2" />
+                          Play Audio
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </PageLayout>
     )
   }
@@ -374,113 +774,15 @@ export default function Home() {
   if (activeTab === 'garage') {
     return (
       <PageLayout>
-        {/* Add Vehicle Form */}
-        <Card variant="elevated">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-3">
-              <Plus className="h-6 w-6 text-orange-500" />
-              Add New Vehicle
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={createVehicle} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Input
-                placeholder="Make (e.g., Toyota)"
-                value={newVehicle.make}
-                onChange={(e) => setNewVehicle({ ...newVehicle, make: e.target.value })}
-                required
-              />
-              <Input
-                placeholder="Model (e.g., Camry)"
-                value={newVehicle.model}
-                onChange={(e) => setNewVehicle({ ...newVehicle, model: e.target.value })}
-                required
-              />
-              <Input
-                type="number"
-                placeholder="Year"
-                value={newVehicle.year}
-                onChange={(e) => setNewVehicle({ ...newVehicle, year: e.target.value })}
-                min="1900"
-                max={new Date().getFullYear() + 2}
-                required
-              />
-              <Input
-                placeholder="Trim (optional)"
-                value={newVehicle.trim}
-                onChange={(e) => setNewVehicle({ ...newVehicle, trim: e.target.value })}
-              />
-              <Input
-                placeholder="Engine (optional)"
-                value={newVehicle.engine}
-                onChange={(e) => setNewVehicle({ ...newVehicle, engine: e.target.value })}
-              />
-              <Input
-                placeholder="VIN (optional)"
-                value={newVehicle.vin}
-                onChange={(e) => setNewVehicle({ ...newVehicle, vin: e.target.value })}
-                maxLength={17}
-              />
-              <div className="md:col-span-3">
-                <textarea
-                  placeholder="Notes (optional)"
-                  value={newVehicle.notes}
-                  onChange={(e) => setNewVehicle({ ...newVehicle, notes: e.target.value })}
-                  className="w-full bg-zinc-900/50 border border-zinc-700 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 placeholder:text-zinc-500 resize-none transition-all duration-200"
-                  rows={3}
-                />
-              </div>
-              <Button type="submit" className="md:col-span-3">
-                Add Vehicle
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* Vehicle List */}
-        <Card variant="glass">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-3">
-              <Car className="h-6 w-6 text-orange-500" />
-              Your Vehicles ({userStats?.vehicles.count || 0})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {userStats?.vehicles.vehicles.length ? (
-              <div className="grid gap-4">
-                {userStats.vehicles.vehicles.map((vehicle) => (
-                  <Card key={vehicle.id} variant="default" className="card-hover">
-                    <CardContent className="py-4">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-gradient-to-r from-orange-500 to-red-500 p-2 rounded-lg">
-                            <Car className="h-5 w-5 text-white" />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-white">{vehicle.displayName}</h3>
-                            <p className="text-sm text-zinc-400">Added recently</p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => deleteVehicle(vehicle.id)}
-                          icon={<Trash2 className="h-4 w-4" />}
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <Car className="h-16 w-16 text-zinc-600 mx-auto mb-4" />
-                <p className="text-zinc-400 text-lg mb-2">No vehicles added yet</p>
-                <p className="text-zinc-500 text-sm">Add your first vehicle above to get started!</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <VehicleManager
+          vehicles={userStats?.vehicles.vehicles || []}
+          onCreateVehicle={createVehicle}
+          onUpdateVehicle={updateVehicle}
+          onDeleteVehicle={deleteVehicle}
+          selectedVehicle={selectedVehicle}
+          onVehicleSelect={setSelectedVehicle}
+          userStats={userStats}
+        />
       </PageLayout>
     )
   }
@@ -489,307 +791,39 @@ export default function Home() {
   if (activeTab === 'documents') {
     return (
       <PageLayout>
-        {/* Upload Form */}
-        {userStats?.tier !== 'free_tier' ? (
-          <Card variant="elevated">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-3">
-                <Upload className="h-6 w-6 text-orange-500" />
-                Upload Document
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={uploadDocument} className="space-y-4">
-                <Input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                  className="file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-orange-600 file:text-white file:font-medium hover:file:bg-orange-700"
-                  required
-                />
-                <p className="text-sm text-zinc-400">PDF files only, max 50MB</p>
-
-                <select
-                  value={documentType}
-                  onChange={(e) => setDocumentType(e.target.value)}
-                  className="w-full bg-zinc-900/50 border border-zinc-700 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                >
-                  <option value="service_manual">Service Manual</option>
-                  <option value="repair_manual">Repair Manual</option>
-                  <option value="owners_manual">Owner&apos;s Manual</option>
-                  <option value="parts_catalog">Parts Catalog</option>
-                  <option value="wiring_diagram">Wiring Diagram</option>
-                  <option value="other">Other</option>
-                </select>
-
-                <Button
-                  type="submit"
-                  disabled={!uploadFile}
-                  className="w-full"
-                >
-                  Upload Document
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card variant="glass" className="border-amber-500/20 bg-amber-900/10">
-            <CardContent>
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-amber-200 font-medium">Document uploads available in paid plans</p>
-                  <p className="text-amber-300/80 text-sm mt-1">
-                    Upgrade to upload repair manuals and get personalized assistance!
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Document List */}
-        <Card variant="glass">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-3">
-              <FileText className="h-6 w-6 text-orange-500" />
-              Your Documents ({userStats?.documents.count || 0})
-              {userStats?.documents.storageUsedMB !== undefined && (
-                <span className="text-sm font-normal text-zinc-400">
-                  • {userStats.documents.storageUsedMB.toFixed(1)}MB used
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {userStats?.documents.documents.length ? (
-              <div className="grid gap-4">
-                {userStats.documents.documents.map((doc) => (
-                  <Card key={doc.id} variant="default" className="card-hover">
-                    <CardContent className="py-4">
-                      <div className="flex justify-between items-start">
-                        <div className="flex items-start gap-3">
-                          <div className="bg-gradient-to-r from-orange-500 to-red-500 p-2 rounded-lg shrink-0">
-                            <FileText className="h-5 w-5 text-white" />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-white">{doc.filename}</h3>
-                            <p className="text-sm text-zinc-400 capitalize">
-                              {doc.type.replace('_', ' ')} • {doc.sizeMB}MB
-                            </p>
-                            <p className="text-xs text-zinc-500">
-                              {new Date(doc.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {doc.status === 'processed' ? (
-                            <CheckCircle className="h-5 w-5 text-green-400" />
-                          ) : (
-                            <Clock className="h-5 w-5 text-yellow-400" />
-                          )}
-                          <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
-                            doc.status === 'processed'
-                              ? 'bg-green-900/30 text-green-400 border border-green-800'
-                              : 'bg-yellow-900/30 text-yellow-400 border border-yellow-800'
-                          }`}>
-                            {doc.status}
-                          </span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <FileText className="h-16 w-16 text-zinc-600 mx-auto mb-4" />
-                <p className="text-zinc-400 text-lg mb-2">No documents uploaded yet</p>
-                <p className="text-zinc-500 text-sm">Upload repair manuals to enhance AI responses</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <DocumentManager
+          documents={userStats?.documents.documents || []}
+          onUploadDocument={uploadDocument}
+          onDeleteDocument={deleteDocument}
+          userTier={userStats?.tier || 'free_tier'}
+          userStats={userStats}
+        />
       </PageLayout>
     )
   }
 
-  // Stats Tab
-  if (activeTab === 'stats') {
-    return (
-      <PageLayout>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Current Tier */}
-          <Card variant="glass" className="relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-600/10" />
-            <CardContent className="relative py-6">
-              <div className="flex items-center gap-3 mb-2">
-                {getTierIcon(userStats?.tier || 'free_tier')}
-                <h3 className="font-semibold text-white">Current Plan</h3>
-              </div>
-              <p className="text-2xl font-bold text-gradient">
-                {getTierDisplayName(userStats?.tier || 'free_tier')}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Daily Usage */}
-          <Card variant="default" className="card-hover">
-            <CardContent className="py-6">
-              <div className="flex items-center gap-3 mb-2">
-                <BarChart3 className="h-5 w-5 text-orange-500" />
-                <h3 className="font-semibold text-white">Today&apos;s Questions</h3>
-              </div>
-              <p className={`text-2xl font-bold ${getUsageColor(
-                userStats?.usage.daily.ask_count || 0,
-                userStats?.usage.limits.maxDailyAsks
-              )}`}>
-                {userStats?.usage.daily.ask_count || 0}
-                {userStats?.usage.limits.maxDailyAsks && (
-                  <span className="text-sm text-zinc-500 font-normal">
-                    /{userStats.usage.limits.maxDailyAsks}
-                  </span>
-                )}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Monthly Usage */}
-          <Card variant="default" className="card-hover">
-            <CardContent className="py-6">
-              <div className="flex items-center gap-3 mb-2">
-                <BarChart3 className="h-5 w-5 text-orange-500" />
-                <h3 className="font-semibold text-white">This Month&apos;s Questions</h3>
-              </div>
-              <p className={`text-2xl font-bold ${getUsageColor(
-                userStats?.usage.monthly.ask_count || 0,
-                userStats?.usage.limits.maxMonthlyAsks
-              )}`}>
-                {userStats?.usage.monthly.ask_count || 0}
-                {userStats?.usage.limits.maxMonthlyAsks && (
-                  <span className="text-sm text-zinc-500 font-normal">
-                    /{userStats.usage.limits.maxMonthlyAsks}
-                  </span>
-                )}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Vehicles */}
-          <Card variant="default" className="card-hover">
-            <CardContent className="py-6">
-              <div className="flex items-center gap-3 mb-2">
-                <Car className="h-5 w-5 text-orange-500" />
-                <h3 className="font-semibold text-white">Vehicles</h3>
-              </div>
-              <p className={`text-2xl font-bold ${getUsageColor(
-                userStats?.vehicles.count || 0,
-                userStats?.usage.limits.maxVehicles
-              )}`}>
-                {userStats?.vehicles.count || 0}
-                {userStats?.usage.limits.maxVehicles && (
-                  <span className="text-sm text-zinc-500 font-normal">
-                    /{userStats.usage.limits.maxVehicles}
-                  </span>
-                )}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Documents */}
-          <Card variant="default" className="card-hover">
-            <CardContent className="py-6">
-              <div className="flex items-center gap-3 mb-2">
-                <FileText className="h-5 w-5 text-orange-500" />
-                <h3 className="font-semibold text-white">Documents</h3>
-              </div>
-              <p className={`text-2xl font-bold ${getUsageColor(
-                userStats?.documents.count || 0,
-                userStats?.usage.limits.maxDocumentUploads
-              )}`}>
-                {userStats?.documents.count || 0}
-                {userStats?.usage.limits.maxDocumentUploads && (
-                  <span className="text-sm text-zinc-500 font-normal">
-                    /{userStats.usage.limits.maxDocumentUploads}
-                  </span>
-                )}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Storage */}
-          <Card variant="default" className="card-hover">
-            <CardContent className="py-6">
-              <div className="flex items-center gap-3 mb-2">
-                <Upload className="h-5 w-5 text-orange-500" />
-                <h3 className="font-semibold text-white">Storage Used</h3>
-              </div>
-              <p className="text-2xl font-bold text-blue-400">
-                {userStats?.documents.storageUsedMB?.toFixed(1) || '0.0'}MB
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Upgrade Prompt */}
-        {userStats?.tier === 'free_tier' && (
-          <Card variant="glass" className="relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-green-500/10 to-blue-600/10" />
-            <CardContent className="relative">
-              <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                <span className="text-2xl">🚀</span>
-                Upgrade to Premium
-              </h3>
-              <p className="text-zinc-300 mb-6">
-                Unlock unlimited questions, document uploads, vehicle garage, and priority support!
-              </p>
-              <div className="grid md:grid-cols-2 gap-4">
-                <Card variant="default">
-                  <CardContent className="py-4">
-                    <h4 className="font-semibold text-white mb-2 flex items-center gap-2">
-                      <Zap className="h-4 w-4 text-blue-400" />
-                      Weekend Warrior - $9.99/month
-                    </h4>
-                    <p className="text-sm text-zinc-400">
-                      50 questions/month • 20 documents • Unlimited vehicles
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card variant="default">
-                  <CardContent className="py-4">
-                    <h4 className="font-semibold text-white mb-2 flex items-center gap-2">
-                      <Crown className="h-4 w-4 text-purple-400" />
-                      Master Tech - $19.99/month
-                    </h4>
-                    <p className="text-sm text-zinc-400">
-                      200 questions/month • Unlimited documents • Priority support
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </PageLayout>
-    )
-  }
-
-  // Settings Tab (placeholder)
+  // Settings Tab
   if (activeTab === 'settings') {
     return (
       <PageLayout>
-        <Card variant="elevated">
-          <CardHeader>
-            <CardTitle>Settings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-zinc-400">Settings panel coming soon...</p>
-          </CardContent>
-        </Card>
+        <SettingsPage
+          userStats={userStats}
+          onClearHistory={clearConversationHistory}
+          onSignOut={handleSignOut}
+          onUpgrade={() => setShowPricing(true)}
+        />
       </PageLayout>
     )
   }
 
-  return null
+  // Default fallback
+  return <PageLayout><div>Loading...</div></PageLayout>
+}
+
+export default function Home() {
+  return (
+    <AuthGuard>
+      <MainApp />
+    </AuthGuard>
+  )
 }

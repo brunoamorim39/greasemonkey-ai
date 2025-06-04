@@ -82,8 +82,11 @@ export function validateConfig() {
   const required = [
     'OPENAI_API_KEY',
     'ELEVENLABS_API_KEY',
+    // Client-side Supabase variables
     'NEXT_PUBLIC_SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    // Server-side Supabase variables
+    'SUPABASE_SERVICE_ROLE_KEY',
   ]
 
   const missing = required.filter(key => !process.env[key])

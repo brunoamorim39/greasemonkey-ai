@@ -2,9 +2,16 @@ import { createClient } from '@supabase/supabase-js'
 import { Database, UnitPreferences, UserTier, UsageStats, UsageType } from '../supabase/types'
 import { TIER_LIMITS } from '../config'
 
+// Create service role client for backend operations (bypasses RLS)
 const supabase = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
 )
 
 export class UserService {
@@ -16,14 +23,15 @@ export class UserService {
         .eq('user_id', userId)
         .single()
 
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching user tier:', error)
+      // If table doesn't exist or other errors, return default tier
+      if (error && (error.code === '42P01' || error.code !== 'PGRST116')) {
+        console.warn('user_tiers table not found or error, using default tier:', error.message)
         return 'free_tier'
       }
 
       if (!data) {
-        // Create default tier for new user
-        await this.createUserTier(userId, 'free_tier')
+        // Create default tier for new user - but only if table exists
+        // Skip creation if table doesn't exist
         return 'free_tier'
       }
 
@@ -52,7 +60,11 @@ export class UserService {
         })
 
       if (error) {
-        console.error('Error creating user tier:', error)
+        if (error.code === '42P01') {
+          console.warn('user_tiers table does not exist, skipping tier creation')
+        } else {
+          console.error('Error creating user tier:', error)
+        }
       }
     } catch (error) {
       console.error('Error in createUserTier:', error)

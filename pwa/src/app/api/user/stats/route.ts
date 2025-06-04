@@ -36,6 +36,11 @@ async function getUserStatsHandler(request: NextRequest) {
           make: v.make,
           model: v.model,
           year: v.year,
+          trim: v.trim,
+          engine: v.engine,
+          nickname: v.nickname,
+          notes: v.notes,
+          mileage: v.mileage,
         })),
       },
       documents: {

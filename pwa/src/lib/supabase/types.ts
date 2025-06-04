@@ -61,7 +61,9 @@ export interface Database {
           trim?: string
           engine?: string
           vin?: string
+          nickname?: string
           notes?: string
+          mileage?: number
           created_at: string
           updated_at: string
         }
@@ -74,7 +76,9 @@ export interface Database {
           trim?: string
           engine?: string
           vin?: string
+          nickname?: string
           notes?: string
+          mileage?: number
           created_at?: string
           updated_at?: string
         }
@@ -85,7 +89,9 @@ export interface Database {
           trim?: string
           engine?: string
           vin?: string
+          nickname?: string
           notes?: string
+          mileage?: number
           updated_at?: string
         }
       }
@@ -310,8 +316,9 @@ export interface Vehicle {
   year: number
   trim?: string
   engine?: string
-  vin?: string
+  nickname?: string
   notes?: string
+  mileage?: number
   created_at: string
   updated_at: string
 }
