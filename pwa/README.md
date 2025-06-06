@@ -76,7 +76,6 @@ TTS_STYLE=0.2               # Some style for naturalness
 TTS_USE_SPEAKER_BOOST=false # Not supported in Flash v2.5
 
 # App Settings
-DEFAULT_USER_ID=demo-user
 ENVIRONMENT=development
 ```
 

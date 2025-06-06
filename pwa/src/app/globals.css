@@ -354,14 +354,98 @@ select {
   to { opacity: 1; }
 }
 
+/* Mobile-first optimizations */
 @media (max-width: 768px) {
   body {
     font-size: 16px;
+    /* Prevent zoom on input focus */
+    -webkit-text-size-adjust: 100%;
   }
 
   .container {
     padding-left: 16px;
     padding-right: 16px;
+  }
+
+  /* Better touch targets */
+  button, .button, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Improved scroll performance */
+  .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Prevent horizontal scroll and ensure proper mobile scrolling */
+  html, body {
+    overflow-x: hidden;
+    height: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Mobile layout scrolling fixes */
+  .mobile-scroll-container {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    transform: translateZ(0);
+  }
+
+  /* Conversation bubbles */
+  .chat-bubble {
+    max-width: 85%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    animation: fadeInUp 0.3s ease-out;
+  }
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Better input styling for mobile */
+  input, textarea {
+    /* Prevent zoom on focus for iOS */
+    font-size: 16px;
+  }
+
+  /* Improve touch handling */
+  .usage-dropdown {
+    /* Prevent text selection on touch */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    /* Better touch response */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Mobile menu improvements */
+  .mobile-menu {
+    /* Smooth transform for better performance */
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    animation: slideInFromLeft 0.3s ease-out;
+  }
+
+  @keyframes slideInFromLeft {
+    from {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
   }
 }
 
@@ -491,5 +575,53 @@ select {
 
 .tier-master {
   @apply bg-gradient-to-r from-orange-500 to-orange-600 text-white;
+}
+
+/* Range slider styling */
+input[type="range"].slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border-radius: 4px;
+  outline: none;
+  opacity: 0.9;
+  transition: opacity 0.2s;
+}
+
+input[type="range"].slider:hover {
+  opacity: 1;
+}
+
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f97316;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+input[type="range"].slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.4);
+}
+
+input[type="range"].slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f97316;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+  border: none;
+}
+
+input[type="range"].slider::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.4);
 }
 

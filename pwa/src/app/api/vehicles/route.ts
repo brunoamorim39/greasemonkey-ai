@@ -3,10 +3,10 @@ import { vehicleService } from '@/lib/services/vehicle-service'
 import { config } from '@/lib/config'
 import { withAuth } from '@/lib/auth'
 
-async function getVehiclesHandler(request: NextRequest) {
+async function getVehiclesHandler(request: NextRequest & { userId: string }) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId') || config.app.defaultUserId
+    // Get authenticated user ID from middleware
+    const userId = request.userId
 
     const vehicles = await vehicleService.getUserVehicles(userId)
 
@@ -20,10 +20,14 @@ async function getVehiclesHandler(request: NextRequest) {
   }
 }
 
-async function createVehicleHandler(request: NextRequest) {
+async function createVehicleHandler(request: NextRequest & { userId: string }) {
   try {
     const body = await request.json()
-    const { userId = config.app.defaultUserId, displayName, ...vehicleData } = body
+    // Get authenticated user ID from middleware
+    const userId = request.userId
+    const { displayName, ...vehicleData } = body
+
+
 
     // Validate required fields
     if (!vehicleData.make || !vehicleData.model || !vehicleData.year) {

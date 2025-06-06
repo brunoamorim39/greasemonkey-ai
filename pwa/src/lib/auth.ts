@@ -1,38 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
-export function validateApiKey(request: NextRequest): { isValid: boolean; error?: string } {
-  const apiKey = process.env.NEXT_PUBLIC_API_KEY
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-  // If no API key is configured, allow all requests (development mode)
-  if (!apiKey) {
-    return { isValid: true }
-  }
+// Create admin client for server-side JWT verification
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-  // Check for API key in headers
-  const providedKey = request.headers.get('x-api-key') || request.headers.get('authorization')?.replace('Bearer ', '')
+export async function validateAuth(request: NextRequest): Promise<{ isValid: boolean; userId?: string; error?: string }> {
+  // Get authorization header
+  const authHeader = request.headers.get('authorization')
 
-  if (!providedKey) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return {
       isValid: false,
-      error: 'API key required. Provide x-api-key header or Authorization: Bearer <key>'
+      error: 'Authorization header required. Provide Authorization: Bearer <jwt_token>'
     }
   }
 
-  if (providedKey !== apiKey) {
+  const token = authHeader.substring(7) // Remove 'Bearer ' prefix
+
+  try {
+    // Verify JWT token with Supabase
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
+
+    if (error || !user) {
+      return {
+        isValid: false,
+        error: 'Invalid or expired authentication token'
+      }
+    }
+
+    return {
+      isValid: true,
+      userId: user.id
+    }
+  } catch (error) {
     return {
       isValid: false,
-      error: 'Invalid API key'
+      error: 'Authentication verification failed'
     }
   }
-
-  return { isValid: true }
 }
 
 export function withAuth<T extends unknown[]>(
-  handler: (request: NextRequest, ...args: T) => Promise<NextResponse>
+  handler: (request: NextRequest & { userId: string }, ...args: T) => Promise<NextResponse>
 ) {
   return async (request: NextRequest, ...args: T): Promise<NextResponse> => {
-    const authResult = validateApiKey(request)
+    const authResult = await validateAuth(request)
 
     if (!authResult.isValid) {
       return NextResponse.json(
@@ -41,7 +56,11 @@ export function withAuth<T extends unknown[]>(
       )
     }
 
-    return handler(request, ...args)
+    // Add userId to request object
+    const authenticatedRequest = request as NextRequest & { userId: string }
+    authenticatedRequest.userId = authResult.userId!
+
+    return handler(authenticatedRequest, ...args)
   }
 }
 
@@ -50,7 +69,7 @@ export function createAuthError(): NextResponse {
   return NextResponse.json(
     {
       error: 'Authentication required',
-      message: 'Please provide a valid API key in the x-api-key header or Authorization: Bearer header'
+      message: 'Please provide a valid JWT token in the Authorization: Bearer header'
     },
     { status: 401 }
   )

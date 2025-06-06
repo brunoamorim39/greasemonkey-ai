@@ -3,10 +3,10 @@ import { documentService } from '@/lib/services/document-service'
 import { config } from '@/lib/config'
 import { withAuth } from '@/lib/auth'
 
-async function getDocumentsHandler(request: NextRequest) {
+async function getDocumentsHandler(request: NextRequest & { userId: string }) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId') || config.app.defaultUserId
+    // Get authenticated user ID from middleware
+    const userId = request.userId
 
     const documents = await documentService.getUserDocuments(userId)
 
@@ -20,11 +20,12 @@ async function getDocumentsHandler(request: NextRequest) {
   }
 }
 
-async function uploadDocumentHandler(request: NextRequest) {
+async function uploadDocumentHandler(request: NextRequest & { userId: string }) {
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
-    const userId = formData.get('userId') as string || config.app.defaultUserId
+    // Get authenticated user ID from middleware
+    const userId = request.userId
     const documentType = formData.get('document_type') as string
     const carMake = formData.get('car_make') as string || undefined
     const carModel = formData.get('car_model') as string || undefined

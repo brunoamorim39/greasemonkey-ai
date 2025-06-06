@@ -5,10 +5,10 @@ import { documentService } from '@/lib/services/document-service'
 import { config } from '@/lib/config'
 import { withAuth } from '@/lib/auth'
 
-async function getUserStatsHandler(request: NextRequest) {
+async function getUserStatsHandler(request: NextRequest & { userId: string }) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId') || config.app.defaultUserId
+    // Get authenticated user ID from middleware
+    const userId = request.userId
 
     // Get all user data in parallel
     const [

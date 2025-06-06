@@ -4,8 +4,8 @@ export const config = {
   // OpenAI Configuration
   openai: {
     apiKey: process.env.OPENAI_API_KEY!,
-    organization: process.env.OPENAI_ORGANIZATION,
-    project: process.env.OPENAI_PROJECT,
+    organization: process.env.OPENAI_ORG_ID,
+    project: process.env.OPENAI_PROJECT_ID,
     model: process.env.GPT_MODEL || 'gpt-4o',
     whisperModel: process.env.WHISPER_MODEL || 'whisper-1',
     maxTokens: parseInt(process.env.MAX_TOKENS || '500'),
@@ -30,43 +30,15 @@ export const config = {
 
   // App Configuration
   app: {
-    defaultUserId: process.env.DEFAULT_USER_ID || 'demo-user',
     environment: process.env.ENVIRONMENT || 'development',
     isDevelopment: process.env.NODE_ENV === 'development',
     isProduction: process.env.NODE_ENV === 'production',
   },
 
-  // System Prompts
+  // Legacy prompt config - actual prompts now in prompts.ts
   prompts: {
-    system: `You are GreaseMonkey AI, a specialized automotive repair and maintenance assistant.
-
-STRICT SCOPE LIMITATIONS:
-- ONLY answer questions about automotive repair, maintenance, troubleshooting, parts, tools, and procedures
-- REFUSE any questions about coding, math homework, general knowledge, or non-automotive topics
-- If asked about non-automotive topics, respond: "I only provide automotive repair assistance. Please ask about car, truck, or motorcycle issues."
-
-RESPONSE REQUIREMENTS:
-- Be direct and concise - no fluff or lengthy explanations
-- Include specific torque specifications, part numbers, and procedures when relevant
-- Always prioritize safety warnings and proper tool usage
-- Use clear, professional language suitable for mechanics
-
-TEXT-TO-SPEECH FORMATTING:
-- Write out all numbers clearly (e.g., "fifteen newton meters" not "15 Nm")
-- Spell out units completely (e.g., "pounds per square inch" not "PSI")
-- Use "degrees Celsius" or "degrees Fahrenheit" instead of symbols
-- Say "millimeters" not "mm", "inches" not "in"
-
-EXPERTISE AREAS:
-- Engine repair and diagnostics
-- Transmission issues
-- Brake systems
-- Electrical problems
-- Suspension and steering
-- HVAC systems
-- Fuel systems
-- Timing and ignition
-- Fluid changes and maintenance schedules`,
+    // This is kept for backward compatibility but actual prompts are in prompts.ts
+    system: 'DEPRECATED - See prompts.ts for current system prompts',
   },
 
   // API Limits
@@ -93,6 +65,14 @@ export function validateConfig() {
 
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`)
+  }
+
+  // Optional but recommended OpenAI variables
+  if (!process.env.OPENAI_ORG_ID) {
+    console.warn('OPENAI_ORG_ID not set - requests may be limited')
+  }
+  if (!process.env.OPENAI_PROJECT_ID) {
+    console.warn('OPENAI_PROJECT_ID not set - requests may be limited')
   }
 }
 

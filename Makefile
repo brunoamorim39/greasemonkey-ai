@@ -41,7 +41,7 @@ help: ## Show this help message
 	@echo "  make clean      # Clean everything and start fresh"
 
 # Development Commands
-dev: install ## Start PWA development environment
+dev: install build ## Start PWA development environment
 	@echo "🚀 Starting PWA development environment..."
 	@echo "🧹 Cleaning up existing containers..."
 	$(DOCKER_COMPOSE) down --remove-orphans
@@ -70,10 +70,6 @@ prod-test: ## Test production build locally
 build: install ## Build PWA for production
 	@echo "🔨 Building PWA for production..."
 	$(DOCKER_COMPOSE) build pwa
-
-build-dev: install ## Build PWA for development
-	@echo "🔨 Building PWA for development..."
-	$(DOCKER_COMPOSE) build pwa --target development
 
 # Production Commands
 prod: build ## Run production environment
@@ -116,7 +112,8 @@ clean: ## Clean build artifacts and containers
 	@docker image prune -f || true
 	@echo "🗑️  Removing unused networks..."
 	@docker network prune -f || true
-	cd $(PWA_DIR) && rm -rf .next
+	@echo "🗑️  Cleaning .next directory using Docker..."
+	@docker run --rm -v "$(CURDIR)/$(PWA_DIR):/workspace" alpine:latest sh -c "rm -rf /workspace/.next" || true
 	@echo "✅ Cleanup complete (node_modules preserved)"
 
 clean-all: ## Nuclear clean - removes everything including node_modules
@@ -130,7 +127,8 @@ clean-all: ## Nuclear clean - removes everything including node_modules
 	@docker network prune -f || true
 	@echo "🗑️  Removing unused volumes..."
 	@docker volume prune -f || true
-	cd $(PWA_DIR) && rm -rf .next node_modules
+	@echo "🗑️  Cleaning build files using Docker..."
+	@docker run --rm -v "$(CURDIR)/$(PWA_DIR):/workspace" alpine:latest sh -c "rm -rf /workspace/.next /workspace/node_modules" || true
 	@echo "✅ Nuclear cleanup complete"
 	@echo "⚠️  Run 'make install' or 'make dev' to reinstall dependencies"
 

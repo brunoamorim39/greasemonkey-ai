@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import { Car, Plus, Edit, Trash2, Heart, Calendar, Settings } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from './ui/Card'
-import { Button } from './ui/Button'
-import { Input } from './ui/Input'
+import { useState, useEffect } from 'react'
+import { Car, Plus, Edit3, Trash2, Save, X, Heart, Gauge, Star, CheckCircle2, AlertCircle, ArrowUp } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+
 import { cn } from '@/lib/utils'
+import { getTierDisplayName } from '@/lib/utils/tier'
 import type { Database } from '@/lib/supabase'
 import React from 'react'
 
@@ -67,256 +69,301 @@ export function VehicleManager({
   const [isAdding, setIsAdding] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<string | null>(null)
   const [newVehicle, setNewVehicle] = useState<Partial<Vehicle>>({
+    year: new Date().getFullYear(),
     make: '',
     model: '',
-    year: new Date().getFullYear(),
-    nickname: ''
+    nickname: '',
+    trim: '',
+    engine: '',
+    notes: '',
+    mileage: undefined
   })
+
+  const tier = userStats?.tier || 'free'
+  const maxVehicles = userStats?.usage?.limits?.maxVehicles
+  const currentVehicles = vehicles.length
+  const isAtVehicleLimit = maxVehicles !== undefined && maxVehicles !== null && currentVehicles >= maxVehicles
+
+
 
   const handleCreateVehicle = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newVehicle.make || !newVehicle.model || !newVehicle.year) return
+    if (!newVehicle.make || !newVehicle.model || !newVehicle.year) {
+      return
+    }
 
     try {
-      // Create the vehicle data according to the database schema
-      const vehicleData: Omit<VehicleInsert, 'user_id'> = {
-        make: newVehicle.make!,
-        model: newVehicle.model!,
-        year: newVehicle.year!,
-        nickname: newVehicle.nickname || null,
-        trim: null,
-        engine: null,
-        notes: null,
-        mileage: null
-      }
-
-      await onCreateVehicle(vehicleData as any)
-
+      await onCreateVehicle(newVehicle as Omit<Vehicle, 'id'>)
       setNewVehicle({
+        year: new Date().getFullYear(),
         make: '',
         model: '',
-        year: new Date().getFullYear(),
-        nickname: ''
+        nickname: '',
+        trim: '',
+        engine: '',
+        notes: '',
+        mileage: undefined
       })
       setIsAdding(false)
     } catch (error) {
-      console.error('Failed to create vehicle:', error)
+      console.error('Error creating vehicle:', error)
     }
   }
 
   const handleUpdateVehicle = async (vehicleId: string, updates: Partial<Vehicle>) => {
     try {
-      // Remove displayName from updates since it doesn't exist in the database
-      // displayName is computed on the frontend from make, model, year, and trim
-      const { displayName, ...dbUpdates } = updates
-
-      await onUpdateVehicle(vehicleId, dbUpdates)
+      await onUpdateVehicle(vehicleId, updates)
       setEditingVehicle(null)
     } catch (error) {
-      console.error('Failed to update vehicle:', error)
+      console.error('Error updating vehicle:', error)
     }
   }
 
   const handleDeleteVehicle = async (vehicleId: string) => {
-    const vehicle = vehicles.find(v => v.id === vehicleId)
-    if (!vehicle) return
-
-    const confirmed = confirm(
-      `Are you sure you want to delete "${vehicle.displayName}"${vehicle.nickname ? ` (${vehicle.nickname})` : ''}? This action cannot be undone.`
-    )
-
-    if (confirmed) {
+    if (window.confirm('Are you sure you want to delete this vehicle?')) {
       try {
         await onDeleteVehicle(vehicleId)
       } catch (error) {
-        console.error('Failed to delete vehicle:', error)
+        console.error('Error deleting vehicle:', error)
       }
-    }
-  }
-
-  const getVehicleDisplayName = (vehicle: Vehicle) => {
-    if (vehicle.nickname) {
-      return `${vehicle.nickname} (${vehicle.displayName})`
-    }
-    return vehicle.displayName
-  }
-
-  // Get vehicle limits
-  const maxVehicles = userStats?.usage?.limits?.maxVehicles
-  const currentVehicles = vehicles.length
-  const isAtVehicleLimit = maxVehicles !== undefined && maxVehicles !== null && currentVehicles >= maxVehicles
-  const tier = userStats?.tier || 'free_tier'
-
-  // Format tier display name
-  const getTierDisplayName = (tierName: string) => {
-    switch (tierName) {
-      case 'free_tier': return 'Free Tier'
-      case 'weekend_warrior': return 'Weekend Warrior'
-      case 'master_tech': return 'Master Tech'
-      default: return tierName
     }
   }
 
   return (
     <div className="space-y-6">
-      {/* Vehicle List */}
-      <Card variant="glass">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-3">
-              <Car className="h-6 w-6 text-orange-500" />
-              <div className="flex flex-col">
-                <span>Your Garage</span>
-                <div className="flex items-center gap-2 text-sm font-normal">
-                  <span className="text-zinc-400">
-                    {currentVehicles}{maxVehicles !== undefined && maxVehicles !== null ? `/${maxVehicles}` : ''} vehicles
-                  </span>
-                  <span className="text-xs text-zinc-500">•</span>
-                  <span className="text-xs text-zinc-500">{getTierDisplayName(tier)}</span>
-                </div>
-              </div>
-            </CardTitle>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center">
+              <Car className="h-5 w-5 text-white" />
+            </div>
+            Your Garage
+          </h1>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-zinc-400 text-sm">
+              {currentVehicles}{maxVehicles !== undefined && maxVehicles !== null ? `/${maxVehicles}` : ''} vehicles
+            </span>
+            <span className="text-zinc-600">•</span>
+            <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
+              {getTierDisplayName(tier)}
+            </span>
+          </div>
+        </div>
 
-            {/* Upgrade hint when at limit */}
-            {isAtVehicleLimit && (
-              <div className="text-center">
-                <p className="text-sm text-orange-400 mb-2">Vehicle limit reached</p>
+        {/* Add Vehicle Button */}
+        {!isAtVehicleLimit && (
+          <Button
+            onClick={() => setIsAdding(true)}
+            size="sm"
+            className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Vehicle
+          </Button>
+        )}
+      </div>
+
+      {/* Vehicle Limit Alert */}
+      {isAtVehicleLimit && (
+        <Card className="border-orange-500/30 bg-orange-500/10">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-orange-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-orange-400 font-medium mb-1">Vehicle Limit Reached</h3>
+                <p className="text-sm text-zinc-400 mb-3">
+                  You've reached the maximum of {maxVehicles} vehicles for the {getTierDisplayName(tier)}.
+                  Upgrade to add more vehicles to your garage.
+                </p>
                 <Button
-                  variant="outline"
                   size="sm"
+                  variant="outline"
                   className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+                  onClick={() => window.dispatchEvent(new CustomEvent('showPricing'))}
                 >
+                  <ArrowUp className="h-4 w-4 mr-2" />
                   Upgrade Plan
                 </Button>
               </div>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {vehicles.length > 0 ? (
-            <div className="grid gap-4">
-              {vehicles.map((vehicle) => (
-                <VehicleCard
-                  key={vehicle.id}
-                  vehicle={vehicle}
-                  isSelected={selectedVehicle === vehicle.id}
-                  isEditing={editingVehicle === vehicle.id}
-                  onSelect={() => onVehicleSelect?.(vehicle.id)}
-                  onEdit={() => setEditingVehicle(vehicle.id)}
-                  onSave={(updates) => handleUpdateVehicle(vehicle.id, updates)}
-                  onCancel={() => setEditingVehicle(null)}
-                  onDelete={() => handleDeleteVehicle(vehicle.id)}
-                />
-              ))}
             </div>
-          ) : (
-            <div className="text-center py-12">
-              <Car className="h-16 w-16 text-zinc-600 mx-auto mb-4" />
-              <p className="text-zinc-400 text-lg mb-2">No vehicles in your garage yet</p>
-              <p className="text-zinc-500 text-sm">Add your first vehicle below to get personalized automotive assistance!</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Add Vehicle Form */}
-      <Card variant="elevated">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-3">
-              <Plus className="h-6 w-6 text-orange-500" />
-              Add New Vehicle
-            </CardTitle>
-            {!isAdding && (
+      {/* Vehicle List */}
+      {vehicles.length > 0 ? (
+        <div className="space-y-3">
+          {vehicles.map((vehicle) => (
+            <VehicleCard
+              key={vehicle.id}
+              vehicle={vehicle}
+              isSelected={selectedVehicle === vehicle.id}
+              isEditing={editingVehicle === vehicle.id}
+              onSelect={() => onVehicleSelect?.(vehicle.id)}
+              onEdit={() => setEditingVehicle(vehicle.id)}
+              onSave={(updates) => handleUpdateVehicle(vehicle.id, updates)}
+              onCancel={() => setEditingVehicle(null)}
+              onDelete={() => handleDeleteVehicle(vehicle.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <Card className="border-zinc-800/50">
+          <CardContent className="py-12 text-center">
+            <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Car className="h-10 w-10 text-zinc-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">No vehicles yet</h3>
+            <p className="text-zinc-400 mb-6 max-w-sm mx-auto">
+              Add your first vehicle to get personalized automotive assistance and maintenance tracking.
+            </p>
+            {!isAtVehicleLimit && (
               <Button
                 onClick={() => setIsAdding(true)}
-                size="sm"
-                disabled={isAtVehicleLimit}
-                className={isAtVehicleLimit ? 'opacity-50 cursor-not-allowed' : ''}
+                className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
               >
-                Add Vehicle
+                <Plus className="h-4 w-4 mr-2" />
+                Add Your First Vehicle
               </Button>
             )}
-          </div>
+          </CardContent>
+        </Card>
+      )}
 
-          {/* Limit warning */}
-          {isAtVehicleLimit && (
-            <div className="mt-3 p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg">
-              <div className="flex items-center gap-2 text-orange-400 text-sm">
-                <Car className="h-4 w-4" />
-                <span className="font-medium">Vehicle limit reached ({currentVehicles}/{maxVehicles})</span>
-              </div>
-              <p className="text-xs text-zinc-400 mt-1">
-                You've reached the maximum number of vehicles for the {getTierDisplayName(tier)}.
-                Upgrade your plan to add more vehicles to your garage.
-              </p>
+      {/* Add Vehicle Form */}
+      {isAdding && (
+        <Card className="border-orange-500/30 bg-zinc-900/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-3">
+                <Plus className="h-5 w-5 text-orange-500" />
+                Add New Vehicle
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsAdding(false)}
+                className="p-2 h-auto"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
-          )}
-        </CardHeader>
-
-        {isAdding && (
+          </CardHeader>
           <CardContent>
             <form onSubmit={handleCreateVehicle} className="space-y-4">
-              {/* Basic Info Row */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Input
-                  placeholder="Make (e.g., Toyota)"
-                  value={newVehicle.make || ''}
-                  onChange={(e) => setNewVehicle({ ...newVehicle, make: e.target.value })}
-                  required
-                />
-                <Input
-                  placeholder="Model (e.g., Camry)"
-                  value={newVehicle.model || ''}
-                  onChange={(e) => setNewVehicle({ ...newVehicle, model: e.target.value })}
-                  required
-                />
-                <Input
-                  type="number"
-                  placeholder="Year"
-                  value={newVehicle.year || ''}
-                  onChange={(e) => setNewVehicle({ ...newVehicle, year: parseInt(e.target.value) || new Date().getFullYear() })}
-                  min="1900"
-                  max={new Date().getFullYear() + 2}
-                  required
-                />
+              {/* Basic Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Year *</label>
+                  <Input
+                    type="number"
+                    placeholder="2024"
+                    value={newVehicle.year || ''}
+                    onChange={(e) => setNewVehicle({ ...newVehicle, year: parseInt(e.target.value) || new Date().getFullYear() })}
+                    min="1900"
+                    max={new Date().getFullYear() + 2}
+                    required
+                    className="bg-zinc-800/50 border-zinc-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Make *</label>
+                  <Input
+                    placeholder="Toyota"
+                    value={newVehicle.make || ''}
+                    onChange={(e) => setNewVehicle({ ...newVehicle, make: e.target.value })}
+                    required
+                    className="bg-zinc-800/50 border-zinc-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Model *</label>
+                  <Input
+                    placeholder="Camry"
+                    value={newVehicle.model || ''}
+                    onChange={(e) => setNewVehicle({ ...newVehicle, model: e.target.value })}
+                    required
+                    className="bg-zinc-800/50 border-zinc-700"
+                  />
+                </div>
               </div>
 
-              {/* Nickname */}
-              <div>
-                <Input
-                  placeholder="Nickname (optional, e.g., 'Blue Beast', 'Daily Driver')"
-                  value={newVehicle.nickname || ''}
-                  onChange={(e) => setNewVehicle({ ...newVehicle, nickname: e.target.value })}
-                />
-                <p className="text-xs text-zinc-500 mt-1">Give your vehicle a personal nickname</p>
+              {/* Additional Details */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Nickname</label>
+                  <Input
+                    placeholder="My Daily Driver"
+                    value={newVehicle.nickname || ''}
+                    onChange={(e) => setNewVehicle({ ...newVehicle, nickname: e.target.value })}
+                    className="bg-zinc-800/50 border-zinc-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Trim Level</label>
+                  <Input
+                    placeholder="XLE, Sport, etc."
+                    value={newVehicle.trim || ''}
+                    onChange={(e) => setNewVehicle({ ...newVehicle, trim: e.target.value })}
+                    className="bg-zinc-800/50 border-zinc-700"
+                  />
+                </div>
               </div>
 
-              {/* Form Actions */}
-              <div className="flex gap-3">
-                <Button type="submit" className="flex-1">
-                  Add Vehicle
-                </Button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Engine</label>
+                  <Input
+                    placeholder="2.4L I4, V6, etc."
+                    value={newVehicle.engine || ''}
+                    onChange={(e) => setNewVehicle({ ...newVehicle, engine: e.target.value })}
+                    className="bg-zinc-800/50 border-zinc-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">Current Mileage</label>
+                  <Input
+                    type="number"
+                    placeholder="75000"
+                    value={newVehicle.mileage || ''}
+                    onChange={(e) => setNewVehicle({ ...newVehicle, mileage: parseInt(e.target.value) || undefined })}
+                    className="bg-zinc-800/50 border-zinc-700"
+                  />
+                </div>
+              </div>
+
+                             <div>
+                 <label className="block text-sm font-medium text-zinc-300 mb-2">Notes</label>
+                 <textarea
+                   placeholder="Any additional details about your vehicle..."
+                   value={newVehicle.notes || ''}
+                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewVehicle({ ...newVehicle, notes: e.target.value })}
+                   className="w-full bg-zinc-800/50 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder:text-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 min-h-[80px]"
+                 />
+               </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => {
-                    setIsAdding(false)
-                    setNewVehicle({
-                      make: '',
-                      model: '',
-                      year: new Date().getFullYear(),
-                      nickname: ''
-                    })
-                  }}
+                  onClick={() => setIsAdding(false)}
                 >
                   Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+                  disabled={!newVehicle.make || !newVehicle.model || !newVehicle.year}
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Add Vehicle
                 </Button>
               </div>
             </form>
           </CardContent>
-        )}
-      </Card>
+        </Card>
+      )}
     </div>
   )
 }
@@ -344,8 +391,7 @@ function VehicleCard({
 }: VehicleCardProps) {
   const [editData, setEditData] = useState<Partial<Vehicle>>({})
 
-  // Reset editData whenever editing mode is entered
-  React.useEffect(() => {
+  useEffect(() => {
     if (isEditing) {
       setEditData({
         make: vehicle.make,
@@ -366,75 +412,119 @@ function VehicleCard({
 
   if (isEditing) {
     return (
-      <Card variant="elevated" className="border-orange-500/50">
-        <CardContent className="py-4">
+      <Card className="border-orange-500/30 bg-zinc-900/50">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-3">
+              <Edit3 className="h-5 w-5 text-orange-500" />
+              Edit Vehicle
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onCancel}
+              className="p-2 h-auto"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
           <div className="space-y-4">
-            <h3 className="font-semibold text-white">Edit Vehicle</h3>
-
-            {/* Basic vehicle info - make, model, year */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <Input
-                placeholder="Make"
-                value={editData.make || ''}
-                onChange={(e) => setEditData({ ...editData, make: e.target.value })}
-                required
-              />
-              <Input
-                placeholder="Model"
-                value={editData.model || ''}
-                onChange={(e) => setEditData({ ...editData, model: e.target.value })}
-                required
-              />
-              <Input
-                type="number"
-                placeholder="Year"
-                value={editData.year || ''}
-                onChange={(e) => setEditData({ ...editData, year: parseInt(e.target.value) || new Date().getFullYear() })}
-                min="1900"
-                max={new Date().getFullYear() + 2}
-                required
-              />
+            {/* Basic Info */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Year *</label>
+                <Input
+                  type="number"
+                  value={editData.year || ''}
+                  onChange={(e) => setEditData({ ...editData, year: parseInt(e.target.value) || new Date().getFullYear() })}
+                  min="1900"
+                  max={new Date().getFullYear() + 2}
+                  required
+                  className="bg-zinc-800/50 border-zinc-700"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Make *</label>
+                <Input
+                  value={editData.make || ''}
+                  onChange={(e) => setEditData({ ...editData, make: e.target.value })}
+                  required
+                  className="bg-zinc-800/50 border-zinc-700"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Model *</label>
+                <Input
+                  value={editData.model || ''}
+                  onChange={(e) => setEditData({ ...editData, model: e.target.value })}
+                  required
+                  className="bg-zinc-800/50 border-zinc-700"
+                />
+              </div>
             </div>
 
-            {/* Additional details */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input
-                placeholder="Nickname (optional)"
-                value={editData.nickname || ''}
-                onChange={(e) => setEditData({ ...editData, nickname: e.target.value })}
-              />
-              <Input
-                placeholder="Trim (optional)"
-                value={editData.trim || ''}
-                onChange={(e) => setEditData({ ...editData, trim: e.target.value })}
-              />
-              <Input
-                placeholder="Engine (optional)"
-                value={editData.engine || ''}
-                onChange={(e) => setEditData({ ...editData, engine: e.target.value })}
-              />
-              <Input
-                type="number"
-                placeholder="Current mileage (optional)"
-                value={editData.mileage || ''}
-                onChange={(e) => setEditData({ ...editData, mileage: parseInt(e.target.value) || undefined })}
-              />
+            {/* Additional Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Nickname</label>
+                <Input
+                  value={editData.nickname || ''}
+                  onChange={(e) => setEditData({ ...editData, nickname: e.target.value })}
+                  className="bg-zinc-800/50 border-zinc-700"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Trim Level</label>
+                <Input
+                  value={editData.trim || ''}
+                  onChange={(e) => setEditData({ ...editData, trim: e.target.value })}
+                  className="bg-zinc-800/50 border-zinc-700"
+                />
+              </div>
             </div>
 
-            <textarea
-              placeholder="Notes (optional)"
-              value={editData.notes || ''}
-              onChange={(e) => setEditData({ ...editData, notes: e.target.value })}
-              className="w-full bg-zinc-900/50 border border-zinc-700 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 placeholder:text-zinc-500 resize-none transition-all duration-200"
-              rows={2}
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Engine</label>
+                <Input
+                  value={editData.engine || ''}
+                  onChange={(e) => setEditData({ ...editData, engine: e.target.value })}
+                  className="bg-zinc-800/50 border-zinc-700"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Current Mileage</label>
+                <Input
+                  type="number"
+                  value={editData.mileage || ''}
+                  onChange={(e) => setEditData({ ...editData, mileage: parseInt(e.target.value) || undefined })}
+                  className="bg-zinc-800/50 border-zinc-700"
+                />
+              </div>
+            </div>
 
-            <div className="flex gap-2">
-              <Button onClick={handleSave} size="sm" className="flex-1">
-                Save Changes
-              </Button>
-              <Button onClick={onCancel} variant="outline" size="sm">
+                         <div>
+               <label className="block text-sm font-medium text-zinc-300 mb-2">Notes</label>
+               <textarea
+                 value={editData.notes || ''}
+                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditData({ ...editData, notes: e.target.value })}
+                 className="w-full bg-zinc-800/50 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder:text-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 min-h-[80px]"
+               />
+             </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+              <Button variant="outline" onClick={onCancel}>
                 Cancel
+              </Button>
+              <Button
+                onClick={handleSave}
+                className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+                disabled={!editData.make || !editData.model || !editData.year}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save Changes
               </Button>
             </div>
           </div>
@@ -445,50 +535,72 @@ function VehicleCard({
 
   return (
     <Card
-      variant="default"
       className={cn(
-        "card-hover cursor-pointer transition-all duration-200",
+        "transition-all duration-200 cursor-pointer hover:bg-zinc-900/50 overflow-hidden",
         isSelected && "ring-2 ring-orange-500 bg-orange-500/5"
       )}
       onClick={onSelect}
     >
-      <CardContent className="py-4">
-        <div className="flex justify-between items-start">
-          <div className="flex items-start gap-3 flex-1">
-            <div className="bg-gradient-to-r from-orange-500 to-red-500 p-2 rounded-lg shrink-0">
-              <Car className="h-5 w-5 text-white" />
+      <CardContent className="p-4">
+        <div className="space-y-3">
+          {/* Header Row - Vehicle Icon, Name, and Status */}
+          <div className="flex items-start gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center flex-shrink-0">
+              <Car className="h-6 w-6 text-white" />
             </div>
 
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-white truncate">{vehicle.displayName}</h3>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <h3 className="font-semibold text-white text-lg truncate">
+                  {vehicle.displayName}
+                </h3>
                 {isSelected && (
-                  <span className="text-xs bg-orange-500 text-white px-2 py-1 rounded-full">
+                  <div className="flex items-center gap-1 px-2 py-1 bg-orange-500 rounded text-xs font-medium flex-shrink-0">
+                    <CheckCircle2 className="h-3 w-3" />
                     Active
-                  </span>
+                  </div>
                 )}
               </div>
 
               {vehicle.nickname && (
-                <div className="flex items-center gap-1 mb-2">
-                  <Heart className="h-3 w-3 text-pink-400" />
-                  <span className="text-sm text-pink-400 font-medium">{vehicle.nickname}</span>
+                <div className="flex items-center gap-1">
+                  <Heart className="h-4 w-4 text-pink-400" />
+                  <span className="text-pink-400 font-medium">{vehicle.nickname}</span>
                 </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-zinc-400">
-                {vehicle.engine && <span>Engine: {vehicle.engine}</span>}
-                {vehicle.mileage && <span>Mileage: {vehicle.mileage.toLocaleString()} mi</span>}
-                {vehicle.trim && <span>Trim: {vehicle.trim}</span>}
-              </div>
-
-              {vehicle.notes && (
-                <p className="text-sm text-zinc-500 mt-2 line-clamp-2">{vehicle.notes}</p>
               )}
             </div>
           </div>
 
-          <div className="flex gap-1 ml-3">
+          {/* Vehicle Details */}
+          {(vehicle.engine || vehicle.mileage || vehicle.trim) && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-zinc-400 ml-[60px]">
+              {vehicle.engine && (
+                <div className="flex items-center gap-1">
+                  <span>🔧</span>
+                  <span className="truncate">{vehicle.engine}</span>
+                </div>
+              )}
+              {vehicle.mileage && (
+                <div className="flex items-center gap-1">
+                  <Gauge className="h-3 w-3 flex-shrink-0" />
+                  <span>{vehicle.mileage.toLocaleString()} mi</span>
+                </div>
+              )}
+              {vehicle.trim && (
+                <div className="flex items-center gap-1 col-span-2">
+                  <Star className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">{vehicle.trim}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {vehicle.notes && (
+            <p className="text-sm text-zinc-500 line-clamp-2 ml-[60px]">{vehicle.notes}</p>
+          )}
+
+          {/* Action Buttons Row */}
+          <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800/50">
             <Button
               variant="ghost"
               size="sm"
@@ -496,9 +608,10 @@ function VehicleCard({
                 e.stopPropagation()
                 onEdit()
               }}
-              className="p-2"
+              className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 text-zinc-400 hover:text-white"
             >
-              <Edit className="h-4 w-4" />
+              <Edit3 className="h-4 w-4" />
+              <span className="text-xs">Edit</span>
             </Button>
             <Button
               variant="ghost"
@@ -507,9 +620,10 @@ function VehicleCard({
                 e.stopPropagation()
                 onDelete()
               }}
-              className="p-2 text-red-400 hover:text-red-300"
+              className="flex items-center gap-2 px-3 py-2 hover:bg-red-500/20 hover:text-red-400 text-zinc-400"
             >
               <Trash2 className="h-4 w-4" />
+              <span className="text-xs">Delete</span>
             </Button>
           </div>
         </div>

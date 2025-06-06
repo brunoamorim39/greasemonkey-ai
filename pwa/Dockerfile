@@ -36,8 +36,9 @@ ENV NODE_ENV=development
 # Expose port
 EXPOSE 3000
 
-# Start development server with hot reload
-CMD ["npm", "run", "dev"]
+# Start development server with enhanced hot reload for Docker
+# Use DEV_MODE env var to switch between modes: dev:poll (default), dev:webpack
+CMD ["sh", "-c", "npm run ${DEV_MODE:-dev:poll}"]
 
 # Production stage - lightweight runtime
 FROM base AS production

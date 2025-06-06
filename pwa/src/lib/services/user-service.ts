@@ -106,15 +106,20 @@ export class UserService {
     }
   }
 
-  async updateUserPreferences(userId: string, preferences: UnitPreferences): Promise<void> {
+  async updateUserPreferences(userId: string, preferences: Partial<UnitPreferences>): Promise<void> {
     try {
       const { error } = await supabase
         .from('user_preferences')
-        .upsert({
-          user_id: userId,
-          ...preferences,
-          updated_at: new Date().toISOString(),
-        })
+        .upsert(
+          {
+            user_id: userId,
+            ...preferences,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: 'user_id',
+          }
+        )
 
       if (error) {
         console.error('Error updating user preferences:', error)
@@ -135,6 +140,9 @@ export class UserService {
       temperature_unit: 'fahrenheit',
       weight_unit: 'imperial',
       socket_unit: 'imperial',
+      auto_play: true,
+      voice_enabled: true,
+      playback_speed: 1.0,
     }
   }
 

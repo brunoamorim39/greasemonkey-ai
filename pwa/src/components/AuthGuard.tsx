@@ -21,7 +21,7 @@ import { supabase, signIn, signUp, signOut, getCurrentUser } from '@/lib/supabas
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 
 interface AuthGuardProps {
-  children: React.ReactNode
+  children: React.ReactNode | ((user: SupabaseUser) => React.ReactNode)
 }
 
 export function AuthGuard({ children }: AuthGuardProps) {
@@ -140,7 +140,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     console.log('AuthGuard: User authenticated, rendering app')
     return (
       <>
-        {children}
+        {typeof children === 'function' ? children(user) : children}
       </>
     )
   }
@@ -234,48 +234,66 @@ export function AuthGuard({ children }: AuthGuardProps) {
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   {authMode === 'signup' && (
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
-                      <Input
-                        type="text"
-                        placeholder="Full Name"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="pl-10"
-                        required={authMode === 'signup'}
-                      />
+                    <div className="space-y-2">
+                      <label htmlFor="name-input" className="block text-sm font-medium text-zinc-300">
+                        Full Name
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
+                        <Input
+                          id="name-input"
+                          type="text"
+                          placeholder="Enter your full name"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          className="pl-10"
+                          required={authMode === 'signup'}
+                        />
+                      </div>
                     </div>
                   )}
 
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
-                    <Input
-                      type="email"
-                      placeholder="Email address"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="pl-10"
-                      required
-                    />
+                  <div className="space-y-2">
+                    <label htmlFor="email-input" className="block text-sm font-medium text-zinc-300">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
+                      <Input
+                        id="email-input"
+                        type="email"
+                        placeholder="Enter your email address"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
                   </div>
 
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
-                    <Input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="Password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 pr-10"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-zinc-400 hover:text-zinc-300"
-                    >
-                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                    </button>
+                  <div className="space-y-2">
+                    <label htmlFor="password-input" className="block text-sm font-medium text-zinc-300">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
+                      <Input
+                        id="password-input"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Enter your password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="pl-10 pr-10"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-zinc-400 hover:text-zinc-300"
+                      >
+                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
                   </div>
 
                   {error && (

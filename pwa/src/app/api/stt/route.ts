@@ -3,21 +3,21 @@ import OpenAI from 'openai'
 import { config } from '@/lib/config'
 import { withAuth } from '@/lib/auth'
 
+// Simplest possible OpenAI configuration - just the API key
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
-  organization: config.openai.organization,
-  project: config.openai.project,
 })
 
-async function transcribeHandler(request: NextRequest) {
+async function transcribeHandler(request: NextRequest & { userId: string }) {
   try {
     const formData = await request.formData()
     const audioFile = formData.get('audio') as File
-    const userId = formData.get('user_id') as string
+    // Get authenticated user ID from middleware
+    const userId = request.userId
 
-    if (!audioFile || !userId) {
+    if (!audioFile) {
       return NextResponse.json(
-        { error: 'audio file and user_id are required' },
+        { error: 'Audio file is required' },
         { status: 400 }
       )
     }

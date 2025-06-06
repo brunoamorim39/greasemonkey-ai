@@ -5,11 +5,16 @@ import { withAuth } from '@/lib/auth'
 import { userService } from '@/lib/services/user-service'
 import { vehicleService } from '@/lib/services/vehicle-service'
 import { documentService } from '@/lib/services/document-service'
+import { buildSystemPrompt, detectVehicleInfo, detectVehicleFromGarage, isOffTopic, isUnclearMessage, UserVehicle } from '@/lib/prompts'
 
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
-  organization: config.openai.organization,
-  project: config.openai.project,
+})
+
+console.log('OpenAI API Key check:', {
+  hasApiKey: !!config.openai.apiKey,
+  apiKeyLength: config.openai.apiKey?.length || 0,
+  apiKeyPrefix: config.openai.apiKey?.substring(0, 7) || 'none'
 })
 
 interface SearchResult {
@@ -27,7 +32,7 @@ interface UserPreferences {
   temperature_unit?: string
 }
 
-async function askHandler(request: NextRequest) {
+async function askHandler(request: NextRequest & { userId: string }) {
   const startTime = Date.now()
 
   try {
@@ -37,11 +42,8 @@ async function askHandler(request: NextRequest) {
       return NextResponse.json({ error: 'Question is required' }, { status: 400 })
     }
 
-    // Get user from auth context
-    const userId = (request as any).userId
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    // Get authenticated user ID from middleware
+    const userId = request.userId
 
     // Check rate limits and usage
     const usageCheck = await userService.checkUsageLimit(userId, 'ask')
@@ -61,17 +63,53 @@ async function askHandler(request: NextRequest) {
     // Build unit instructions
     const unitInstructions = createUnitInstructions(preferences)
 
-    // Get vehicle context if provided
-    let vehicleContext = ''
-    if (vehicleId) {
-      const vehicle = await vehicleService.getVehicle(userId, vehicleId)
-      if (vehicle) {
-        vehicleContext = `\n\nVEHICLE CONTEXT: ${vehicleService.formatVehicleForGPT(vehicle)}`
-        if (vehicle.engine) {
-          vehicleContext += `\nEngine: ${vehicle.engine}`
+    // Get user's vehicles for garage detection
+    const userVehicles = await vehicleService.getUserVehicles(userId)
+    const userVehiclesForMatching: UserVehicle[] = userVehicles.map(v => ({
+      id: v.id,
+      make: v.make,
+      model: v.model,
+      year: v.year,
+      nickname: v.nickname || undefined,
+      trim: v.trim || undefined,
+      engine: v.engine || undefined,
+      notes: v.notes || undefined
+    }))
+
+        // Check if user mentioned a vehicle from their garage (when no vehicle is selected)
+    let effectiveVehicleId = vehicleId
+    let autoSwitchedVehicle: UserVehicle | null = null
+    let needsVehicleConfirmation: string | null = null
+
+    if (!vehicleId) {
+      const garageMatch = detectVehicleFromGarage(question, userVehiclesForMatching)
+      if (garageMatch.matchedVehicle) {
+        if (garageMatch.confidence === 'high') {
+          // Auto-switch for high confidence
+          effectiveVehicleId = garageMatch.matchedVehicle.id
+          autoSwitchedVehicle = garageMatch.matchedVehicle
+        } else if (garageMatch.confidence === 'medium') {
+          // Ask for confirmation for medium confidence
+          const vehicleName = garageMatch.matchedVehicle.nickname ||
+                              `${garageMatch.matchedVehicle.year} ${garageMatch.matchedVehicle.make} ${garageMatch.matchedVehicle.model}`
+          needsVehicleConfirmation = vehicleName
         }
-        if (vehicle.notes) {
-          vehicleContext += `\nNotes: ${vehicle.notes}`
+        // Low confidence = ignore
+      }
+    }
+
+    // Get vehicle context if provided or auto-detected
+    let vehicleContext = ''
+    let selectedVehicle = null
+    if (effectiveVehicleId) {
+      selectedVehicle = await vehicleService.getVehicle(userId, effectiveVehicleId)
+      if (selectedVehicle) {
+        vehicleContext = `\n\nVEHICLE CONTEXT: ${vehicleService.formatVehicleForGPT(selectedVehicle)}`
+        if (selectedVehicle.engine) {
+          vehicleContext += `\nEngine: ${selectedVehicle.engine}`
+        }
+        if (selectedVehicle.notes) {
+          vehicleContext += `\nNotes: ${selectedVehicle.notes}`
         }
       }
     }
@@ -93,10 +131,33 @@ async function askHandler(request: NextRequest) {
       }
     }
 
-    // Build the full system prompt
-    const systemPrompt = `${config.prompts.system}
+    // Analyze the user's question for intelligent prompting
+    const vehicleInfo = detectVehicleInfo(question)
+    const isOffTopicQuery = isOffTopic(question)
+    const isUnclear = isUnclearMessage(question)
 
-${unitInstructions}${vehicleContext}${documentContext}`
+    // Build vehicle context string for prompt
+    let vehicleContextString = ''
+    if (effectiveVehicleId && vehicleContext) {
+      vehicleContextString = vehicleContext.replace('\n\nVEHICLE CONTEXT: ', '')
+    }
+
+    // Build the intelligent system prompt
+    const systemPrompt = buildSystemPrompt({
+      vehicleContext: vehicleContextString || undefined,
+      hasVehicleInMessage: vehicleInfo.hasVehicleInfo,
+      isUnclear,
+      isOffTopic: isOffTopicQuery,
+      needsVehicleConfirmation: needsVehicleConfirmation || undefined
+    }) + '\n\n' + unitInstructions + vehicleContext + documentContext
+
+    // Debug right before OpenAI call
+    console.log('About to call OpenAI with:', {
+      hasClient: !!openai,
+      clientApiKey: openai.apiKey ? `${openai.apiKey.substring(0, 10)}...${openai.apiKey.slice(-4)}` : 'MISSING',
+      model: config.openai.model,
+      systemPromptLength: systemPrompt.length
+    })
 
     // Call GPT-4
     const completion = await openai.chat.completions.create({
@@ -116,9 +177,11 @@ ${unitInstructions}${vehicleContext}${documentContext}`
     await userService.trackUsage(userId, 'ask', {
       question_length: question.length,
       response_length: response.length,
-      vehicle_id: vehicleId,
+      vehicle_id: effectiveVehicleId,
       used_documents: includeDocuments,
       response_time_ms: responseTime,
+      auto_switched_vehicle: autoSwitchedVehicle ? true : false,
+      requested_confirmation: needsVehicleConfirmation ? true : false,
     })
 
     // Log the query for analytics
@@ -126,7 +189,11 @@ ${unitInstructions}${vehicleContext}${documentContext}`
       userId,
       question,
       response,
-      vehicleId ? { vehicle_id: vehicleId } : undefined,
+            effectiveVehicleId ? {
+        vehicle_id: effectiveVehicleId,
+        auto_switched: autoSwitchedVehicle ? true : false,
+        requested_confirmation: needsVehicleConfirmation ? true : false
+      } : undefined,
       responseTime
     )
 
@@ -174,8 +241,16 @@ ${unitInstructions}${vehicleContext}${documentContext}`
       response,
       audioUrl,
       responseTimeMs: responseTime,
-      vehicleContext: vehicleId ? vehicleContext : undefined,
+      vehicleContext: effectiveVehicleId ? vehicleContext : undefined,
       documentsUsed: includeDocuments ? searchResults?.length || 0 : 0,
+      autoSwitchedVehicle: autoSwitchedVehicle ? {
+        id: autoSwitchedVehicle.id,
+        make: autoSwitchedVehicle.make,
+        model: autoSwitchedVehicle.model,
+        year: autoSwitchedVehicle.year,
+        nickname: autoSwitchedVehicle.nickname
+      } : undefined,
+      needsVehicleConfirmation: needsVehicleConfirmation || undefined,
     })
 
   } catch (error) {

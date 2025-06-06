@@ -1,6 +1,5 @@
 // API client utility for handling authenticated requests
-
-const API_KEY = process.env.NEXT_PUBLIC_CLIENT_API_KEY
+import { supabase } from './supabase'
 
 interface ApiOptions extends RequestInit {
   requireAuth?: boolean
@@ -16,9 +15,15 @@ export async function apiRequest(
     ...(headers as Record<string, string>),
   }
 
-  // Add API key if available and auth is required
-  if (requireAuth && API_KEY) {
-    requestHeaders['x-api-key'] = API_KEY
+  // Add JWT token if auth is required
+  if (requireAuth) {
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      throw new Error('Authentication required. Please sign in.')
+    }
+
+    requestHeaders['Authorization'] = `Bearer ${session.access_token}`
   }
 
   // Add Content-Type for JSON requests

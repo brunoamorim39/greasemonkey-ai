@@ -48,7 +48,7 @@ const plans: PricingPlan[] = [
     features: [
       '3 questions per day',
       '1 vehicle in garage',
-      'Basic voice assistance',
+      'Voice & text assistance',
       'No document uploads',
       'Community support'
     ],
@@ -56,7 +56,7 @@ const plans: PricingPlan[] = [
       questionsPerMonth: '3/day',
       vehicles: 1,
       documentsStorage: '0 MB',
-      audioResponses: false,
+      audioResponses: true,
       prioritySupport: false
     }
   },
@@ -72,7 +72,7 @@ const plans: PricingPlan[] = [
     features: [
       '$0.15 per question',
       '3 vehicles in garage',
-      'Audio responses included',
+      'Voice & text assistance',
       '20 documents per vehicle',
       'Email support'
     ],
@@ -95,7 +95,7 @@ const plans: PricingPlan[] = [
     features: [
       '100 questions per month',
       'Unlimited vehicles',
-      'Priority audio responses',
+      'Voice & text assistance',
       'Unlimited document uploads',
       'Priority support',
       'Advanced diagnostics'
@@ -127,8 +127,8 @@ export function PricingPlans({
     if (onSelectPlan) {
       onSelectPlan(planId, billingType)
     } else {
-      // Redirect to checkout or payment processor
-      console.log(`Selected plan: ${planId} (${billingType})`)
+      // Dispatch event to show pricing modal
+      window.dispatchEvent(new CustomEvent('showPricing'))
     }
   }
 
@@ -153,42 +153,12 @@ export function PricingPlans({
 
   return (
     <div className="space-y-8">
-      {/* Billing Toggle */}
-      <div className="flex justify-center">
-        <div className="bg-zinc-800 p-1 rounded-xl border border-zinc-700">
-          <button
-            onClick={() => setBillingType('monthly')}
-            className={cn(
-              'px-6 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-              billingType === 'monthly'
-                ? 'bg-orange-500 text-white shadow-lg'
-                : 'text-zinc-400 hover:text-white'
-            )}
-          >
-            Monthly
-          </button>
-          <button
-            onClick={() => setBillingType('yearly')}
-            className={cn(
-              'px-6 py-2 rounded-lg text-sm font-medium transition-all duration-200 relative',
-              billingType === 'yearly'
-                ? 'bg-orange-500 text-white shadow-lg'
-                : 'text-zinc-400 hover:text-white'
-            )}
-          >
-            Yearly
-            <span className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
-              Save 17%
-            </span>
-          </button>
-        </div>
-      </div>
-
       {/* Pricing Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
         {plans.map((plan) => {
           const isCurrentPlan = currentPlan === plan.id
           const savings = getYearlySavings(plan)
+          const showBillingToggle = plan.id === 'master_tech' && plan.monthlyPrice > 0
 
           return (
             <Card
@@ -233,7 +203,40 @@ export function PricingPlans({
                   <p className="text-zinc-400 text-sm">{plan.description}</p>
                 </div>
 
-                <div className="space-y-2">
+                {/* Billing Toggle - Only for Master Tech */}
+                {showBillingToggle && (
+                  <div className="flex justify-center">
+                    <div className="bg-zinc-800 p-1 rounded-xl border border-zinc-700">
+                      <button
+                        onClick={() => setBillingType('monthly')}
+                        className={cn(
+                          'px-4 py-1 rounded-lg text-sm font-medium transition-all duration-200',
+                          billingType === 'monthly'
+                            ? 'bg-orange-500 text-white shadow-lg'
+                            : 'text-zinc-400 hover:text-white'
+                        )}
+                      >
+                        Monthly
+                      </button>
+                      <button
+                        onClick={() => setBillingType('yearly')}
+                        className={cn(
+                          'px-4 py-1 rounded-lg text-sm font-medium transition-all duration-200 relative',
+                          billingType === 'yearly'
+                            ? 'bg-orange-500 text-white shadow-lg'
+                            : 'text-zinc-400 hover:text-white'
+                        )}
+                      >
+                        Yearly
+                        <span className="absolute -top-6 -right-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">
+                          Save 17%
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2 min-h-[100px] flex flex-col justify-center">
                   <div className="flex items-center justify-center gap-2">
                     <span className="text-4xl font-bold text-white">{getPrice(plan)}</span>
                     {plan.monthlyPrice > 0 ? (
@@ -271,12 +274,21 @@ export function PricingPlans({
                       </span>
                     </div>
                   )}
+
+                  {/* Spacer for free plan to align pricing sections */}
+                  {plan.id === 'free' && (
+                    <div className="text-center">
+                      <span className="text-green-400 text-sm font-medium">
+                        Forever free
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
 
               <CardContent className="space-y-6">
                 {/* Features List */}
-                <div className="space-y-3">
+                <div className="space-y-3 min-h-[200px]">
                   {plan.features.map((feature, index) => (
                     <div key={index} className="flex items-center gap-3">
                       <Check className="h-5 w-5 text-green-400 shrink-0" />
@@ -292,7 +304,7 @@ export function PricingPlans({
                     <div>Questions: {plan.limits.questionsPerMonth}</div>
                     <div>Vehicles: {plan.limits.vehicles}</div>
                     <div>Storage: {plan.limits.documentsStorage}</div>
-                    <div>Audio: {plan.limits.audioResponses ? 'Yes' : 'No'}</div>
+                    <div>Priority: {plan.limits.prioritySupport ? 'Yes' : 'No'}</div>
                   </div>
                 </div>
 

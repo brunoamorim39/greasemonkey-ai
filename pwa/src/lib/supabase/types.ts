@@ -21,6 +21,9 @@ export interface Database {
           temperature_unit: 'celsius' | 'fahrenheit'
           weight_unit: 'metric' | 'imperial'
           socket_unit: 'metric' | 'imperial'
+          auto_play?: boolean | null
+          voice_enabled?: boolean | null
+          playback_speed?: number | null
           created_at: string
           updated_at: string
         }
@@ -34,6 +37,9 @@ export interface Database {
           temperature_unit?: 'celsius' | 'fahrenheit'
           weight_unit?: 'metric' | 'imperial'
           socket_unit?: 'metric' | 'imperial'
+          auto_play?: boolean | null
+          voice_enabled?: boolean | null
+          playback_speed?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -46,6 +52,9 @@ export interface Database {
           temperature_unit?: 'celsius' | 'fahrenheit'
           weight_unit?: 'metric' | 'imperial'
           socket_unit?: 'metric' | 'imperial'
+          auto_play?: boolean | null
+          voice_enabled?: boolean | null
+          playback_speed?: number | null
           updated_at?: string
         }
       }
@@ -306,6 +315,9 @@ export interface UnitPreferences {
   temperature_unit: 'celsius' | 'fahrenheit'
   weight_unit: 'metric' | 'imperial'
   socket_unit: 'metric' | 'imperial'
+  auto_play?: boolean | null
+  voice_enabled?: boolean | null
+  playback_speed?: number | null
 }
 
 export interface Vehicle {

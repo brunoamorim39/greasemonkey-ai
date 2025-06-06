@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { vehicleService } from '@/lib/services/vehicle-service'
-import { config } from '@/lib/config'
-import { validateApiKey } from '@/lib/auth'
+import { validateAuth } from '@/lib/auth'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   // Handle authentication
-  const authResult = validateApiKey(request)
+  const authResult = await validateAuth(request)
   if (!authResult.isValid) {
     return NextResponse.json(
       { error: authResult.error },
@@ -18,8 +17,7 @@ export async function GET(
 
   try {
     const { id } = await params
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId') || config.app.defaultUserId
+    const userId = authResult.userId!
 
     const vehicle = await vehicleService.getVehicle(userId, id)
 
@@ -45,7 +43,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   // Handle authentication
-  const authResult = validateApiKey(request)
+  const authResult = await validateAuth(request)
   if (!authResult.isValid) {
     return NextResponse.json(
       { error: authResult.error },
@@ -56,7 +54,8 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { userId = config.app.defaultUserId, ...vehicleData } = body
+    const userId = authResult.userId!
+    const vehicleData = body
 
     // Validate year if provided
     if (vehicleData.year) {
@@ -101,7 +100,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   // Handle authentication
-  const authResult = validateApiKey(request)
+  const authResult = await validateAuth(request)
   if (!authResult.isValid) {
     return NextResponse.json(
       { error: authResult.error },
@@ -111,8 +110,7 @@ export async function DELETE(
 
   try {
     const { id } = await params
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId') || config.app.defaultUserId
+    const userId = authResult.userId!
 
     const success = await vehicleService.deleteVehicle(userId, id)
 

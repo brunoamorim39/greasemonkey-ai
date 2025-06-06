@@ -9,13 +9,23 @@ services:
       - ./pwa/.env
     environment:
       - NODE_ENV=development
+      - DEV_MODE=dev:webpack  # Use dev:webpack to switch to webpack mode if needed
       - WATCHPACK_POLLING=true  # Enable hot reload in Docker
+      - CHOKIDAR_USEPOLLING=true  # Force polling for file changes
+      - CHOKIDAR_INTERVAL=1000  # Poll every 1 second
+      - TURBOPACK_REMOTE_CACHE_READ_ONLY=false
+      - TURBOPACK_ENABLE_FILESYSTEM_WATCHING=true  # Enable Turbopack file watching
+      - TURBOPACK_USE_POLLING=true  # Force Turbopack to use polling in Docker
+      - FAST_REFRESH=true  # Ensure Fast Refresh is enabled
+      - WDS_SOCKET_HOST=0.0.0.0  # Fix WebSocket connection for hot reload
+      - FORCE_COLOR=1  # Better terminal output
+      - NEXT_TELEMETRY_DISABLED=1  # Disable telemetry for faster startup
     ports:
       - "3000:3000"
     volumes:
-      - ./pwa:/app
+      - ./pwa:/app:delegated
       - /app/node_modules
-      - /app/.next
+      - /app/.next/cache
     restart: unless-stopped
 
   # PWA Production service (for testing production builds)

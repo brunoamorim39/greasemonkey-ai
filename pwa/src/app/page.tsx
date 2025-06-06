@@ -1,16 +1,18 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, memo, useCallback } from 'react'
 import { apiGet, apiPost, apiDelete, apiPostFormData, apiPut } from '@/lib/api-client'
-import ClientOnly from '@/components/ClientOnly'
+import { useRouter } from 'next/navigation'
+
 import { AuthGuard } from '@/components/AuthGuard'
-import { Navigation, TabType } from '@/components/Navigation'
-import { VoiceInterface } from '@/components/VoiceInterface'
+import { MobileLayout, TabType } from '@/components/MobileLayout'
+import { ChatInterface } from '@/components/ChatInterface'
 import { VehicleManager } from '@/components/VehicleManager'
 import { DocumentManager } from '@/components/DocumentManager'
 import { SettingsPage } from '@/components/SettingsPage'
 import { PricingPlans } from '@/components/PricingPlans'
-import { UsageStatus } from '@/components/UsageStatus'
+import { UsageIndicator } from '@/components/UsageIndicator'
+
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -22,56 +24,69 @@ import {
   Sparkles,
   Car,
   ChevronDown,
-  Heart
+  Heart,
+  MicOff
 } from 'lucide-react'
+import { UsageStats } from '@/lib/supabase/types'
+import { getCurrentUser } from '@/lib/supabase'
+import type { User as SupabaseUser } from '@supabase/supabase-js'
 
-const DEFAULT_USER_ID = 'demo-user'
+// AppSettings interface for MainApp's local state of general settings
+interface AppSettings {
+  voice_enabled: boolean;
+  auto_play: boolean;
+  playback_speed: number;
+}
 
+const initialAppSettings: AppSettings = {
+  voice_enabled: true,
+  auto_play: true,
+  playback_speed: 1.0,
+};
+
+// Restored and detailed Vehicle interface
 interface Vehicle {
-  id: string
-  displayName: string
-  nickname?: string
-  make: string
-  model: string
-  year: number
-  trim?: string
-  engine?: string
-  notes?: string
-  mileage?: number
+  id: string;
+  displayName: string; // Restored based on linter error
+  make: string;        // Restored based on linter error
+  model: string;       // Restored based on linter error
+  year: number;        // Restored based on linter error
+  nickname?: string;
+  trim?: string;
+  engine?: string;
+  notes?: string;
+  mileage?: number;
+  // Add any other properties that were originally on Vehicle
 }
 
+// Restored and detailed Document interface
 interface Document {
-  id: string
-  filename: string
-  type: string
-  status: string
-  sizeMB: string
-  createdAt: string
-  category?: string
-  description?: string
+  id: string;
+  filename: string;
+  type: string;        // Restored based on linter error
+  status: string;      // Restored based on linter error
+  sizeMB: string;      // Restored based on linter error (assuming string, adjust if number)
+  createdAt: string;   // Restored based on linter error (Date or string)
+  category?: string;
+  description?: string;
+  // Add any other properties that were originally on Document
 }
 
+// UserStats interface using the detailed Vehicle and Document types
 interface UserStats {
-  tier: string
-  usage: {
-    daily: { ask_count: number }
-    monthly: { ask_count: number }
-    limits: {
-      maxDailyAsks?: number
-      maxMonthlyAsks?: number
-      maxDocumentUploads?: number
-      maxVehicles?: number
-    }
-  }
+  tier: string;
+  usage: UsageStats; // The type from supabase/types
   vehicles: {
-    count: number
-    vehicles: Vehicle[]
-  }
+    count: number;
+    max?: number;
+    vehicles: Vehicle[]; // Array of the detailed Vehicle objects
+  };
   documents: {
-    count: number
-    storageUsedMB: number
-    documents: Document[]
-  }
+    count: number;
+    storageUsedMB: number; // Corrected: Single definition
+    max_mb?: number;  // Corrected: Single definition
+    documents: Document[]; // Array of the detailed Document objects
+  };
 }
 
 interface ConversationMessage {
@@ -84,99 +99,522 @@ interface ConversationMessage {
   vehicleContext?: string
 }
 
-function MainApp() {
-  // Voice and audio state
-  const [isRecording, setIsRecording] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [isPlaying, setIsPlaying] = useState(false)
+interface MainAppProps {
+  user: SupabaseUser
+}
 
-  // Current conversation
-  const [currentQuestion, setCurrentQuestion] = useState('')
-  const [currentAnswer, setCurrentAnswer] = useState('')
-  const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null)
-
-  // Conversation history
-  const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([])
-
-  // App state
-  const [selectedVehicle, setSelectedVehicle] = useState<string>('')
+function MainApp({ user }: MainAppProps) {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<TabType>('chat')
   const [userStats, setUserStats] = useState<UserStats | null>(null)
-  const [showTextInput, setShowTextInput] = useState(false)
-  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false)
+  const [currentQuestion, setCurrentQuestion] = useState('')
+  const [currentAnswer, setCurrentAnswer] = useState('')
+  const [processingQuestion, setProcessingQuestion] = useState('')
+  const [isRecording, setIsRecording] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [audioRecorder, setAudioRecorder] = useState<MediaRecorder | null>(null)
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([])
   const [showPricing, setShowPricing] = useState(false)
+  const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([])
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
+
+  // Pagination state for chat messages
+  const [messagesPerPage] = useState(20)
+  const [currentPage, setCurrentPage] = useState(0)
+  const [hasMoreMessages, setHasMoreMessages] = useState(false)
+  const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false)
+
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const lastProcessedQuestionRef = useRef<string>('')
+  const processedCombinationsRef = useRef<Set<string>>(new Set())
+  const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentPlayingAudio, setCurrentPlayingAudio] = useState<string | null>(null)
+  const [blobUrls, setBlobUrls] = useState<string[]>([])
+  const [brokenAudioUrls, setBrokenAudioUrls] = useState<Set<string>>(new Set())
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioRef = useRef<HTMLAudioElement>(null)
 
+  const [appSettings, setAppSettings] = useState<AppSettings>(initialAppSettings)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
+  const [lastQuestionTime, setLastQuestionTime] = useState<number | null>(null);
+
+  // Helper functions for tab management (restored)
+  const getTabFromUrl = (): TabType => {
+    if (typeof window === 'undefined') return 'chat';
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab') as TabType;
+    return ['chat', 'garage', 'documents', 'settings'].includes(tab) ? tab : 'chat';
+  };
+
+  const updateUrlForTab = (tab: TabType) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (tab === 'chat') {
+      url.searchParams.delete('tab');
+    } else {
+      url.searchParams.set('tab', tab);
+    }
+    window.history.replaceState({}, '', url.toString());
+  };
+
+  // Helper functions for vehicle URL management
+  const getVehicleFromUrl = (): string | null => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('vehicle');
+  };
+
+  const updateUrlForVehicle = (vehicleId: string | null) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (vehicleId) {
+      url.searchParams.set('vehicle', vehicleId);
+    } else {
+      url.searchParams.delete('vehicle');
+    }
+    window.history.replaceState({}, '', url.toString());
+  };
+
+  // Define loadConversationHistory before the main useEffect that uses it
+  const loadConversationHistory = useCallback(async (vehicleIdToLoad?: string | null, userIdForHistory?: string | null) => {
+    const effectiveUserId = userIdForHistory || user.id;
+    if (!effectiveUserId) return;
+    const targetVehicleId = vehicleIdToLoad !== undefined ? vehicleIdToLoad : selectedVehicle?.id;
+
+    console.log('loadConversationHistory called:', {
+      targetVehicleId,
+      currentHistoryLength: conversationHistory.length,
+      trackedCombinations: processedCombinationsRef.current.size
+    })
+
+    try {
+      const key = `greasemonkey-conversation-history-${effectiveUserId}${targetVehicleId ? `-${targetVehicleId}` : '-general'}`;
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+
+        // Deduplicate conversation history on load - be more aggressive
+        const deduplicatedHistory: ConversationMessage[] = [];
+        const seenCombinations = new Set<string>();
+        const seenQuestions = new Set<string>(); // Also dedupe by question alone
+
+        console.log('🧹 Deduplicating loaded history:', { originalCount: parsed.length })
+
+        for (const msg of parsed) {
+          const combination = `${msg.question.trim()}|||${msg.answer.trim()}`;
+          const questionOnly = msg.question.trim().toLowerCase();
+
+          // Skip if we've seen this exact combination OR this exact question
+          if (seenCombinations.has(combination) || seenQuestions.has(questionOnly)) {
+            console.log('🗑️ Skipping duplicate:', { question: msg.question.substring(0, 50) })
+            continue;
+          }
+
+          seenCombinations.add(combination);
+          seenQuestions.add(questionOnly);
+          deduplicatedHistory.push({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          });
+        }
+
+        console.log('✨ Deduplication complete:', {
+          original: parsed.length,
+          deduplicated: deduplicatedHistory.length,
+          removed: parsed.length - deduplicatedHistory.length
+        })
+
+                // Only update if the loaded history is actually different from current
+        const currentCombinations = conversationHistory.map(msg =>
+          `${msg.question.trim()}|||${msg.answer.trim()}`
+        );
+        const loadedCombinations = deduplicatedHistory.map(msg =>
+          `${msg.question.trim()}|||${msg.answer.trim()}`
+        );
+
+        const hasNewContent = loadedCombinations.some(combo => !currentCombinations.includes(combo)) ||
+                             currentCombinations.some(combo => !loadedCombinations.includes(combo));
+
+        if (!hasNewContent && conversationHistory.length > 0) {
+          console.log('Skipping conversation history load - no new content detected')
+          return;
+        }
+
+        console.log('Loading conversation history:', {
+          current: conversationHistory.length,
+          loaded: deduplicatedHistory.length,
+          hasNewContent
+        })
+
+        setConversationHistory(deduplicatedHistory);
+
+        // Update ref tracking with loaded combinations
+        processedCombinationsRef.current.clear();
+        deduplicatedHistory.forEach(msg => {
+          const combination = `${msg.question.trim()}|||${msg.answer.trim()}`;
+          processedCombinationsRef.current.add(combination);
+        });
+
+        // Save the cleaned history back to localStorage
+        if (deduplicatedHistory.length !== parsed.length) {
+          console.log(`Removed ${parsed.length - deduplicatedHistory.length} duplicate messages from history`);
+          localStorage.setItem(key, JSON.stringify(deduplicatedHistory));
+        }
+      } else {
+        setConversationHistory([]);
+        processedCombinationsRef.current.clear();
+      }
+    } catch (error) {
+      console.error('Error loading conversation history from localStorage:', error);
+      setConversationHistory([]);
+    }
+  }, [selectedVehicle?.id]);
+
+  // Save selected vehicle to localStorage
+  const saveSelectedVehicle = useCallback((vehicle: Vehicle | null) => {
+    try {
+      const key = `greasemonkey-selected-vehicle-${user.id}`;
+      if (vehicle) {
+        localStorage.setItem(key, JSON.stringify(vehicle));
+      } else {
+        localStorage.removeItem(key);
+      }
+    } catch (error) {
+      console.error('Error saving selected vehicle to localStorage:', error);
+    }
+  }, [user.id]);
+
+  // Load selected vehicle from localStorage
+  const loadSelectedVehicle = useCallback(() => {
+    try {
+      const key = `greasemonkey-selected-vehicle-${user.id}`;
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        const parsedVehicle = JSON.parse(saved);
+        // Verify the vehicle still exists in userStats
+        if (userStats?.vehicles?.vehicles?.find(v => v.id === parsedVehicle.id)) {
+          setSelectedVehicle(parsedVehicle);
+          return parsedVehicle;
+        }
+      }
+    } catch (error) {
+      console.error('Error loading selected vehicle from localStorage:', error);
+    }
+    return null;
+  }, [user.id, userStats?.vehicles?.vehicles]);
+
+  // Main useEffect for app initialization
   useEffect(() => {
-    loadUserStats()
-    loadConversationHistory()
+    setIsLoading(true);
+    const currentTabFromUrl = getTabFromUrl();
+    setActiveTab(currentTabFromUrl); // Set initial tab from URL
+
+    const initializeAppData = async () => {
+      try {
+        // DEBUG: Log initialization
+        console.log('=== APP INITIALIZATION DEBUG ===')
+        console.log('User ID:', user.id)
+        // Load general app settings - user-specific
+        const storedSettings = localStorage.getItem(`greasemonkey-settings-${user.id}`);
+
+        let settingsToApply = initialAppSettings;
+        if (storedSettings) {
+          try {
+            const parsedSettings = JSON.parse(storedSettings);
+
+            settingsToApply = {
+              voice_enabled: parsedSettings.voiceEnabled !== undefined ? parsedSettings.voiceEnabled : (parsedSettings.voice_enabled !== undefined ? parsedSettings.voice_enabled : initialAppSettings.voice_enabled),
+              auto_play: parsedSettings.autoPlay !== undefined ? parsedSettings.autoPlay : (parsedSettings.auto_play !== undefined ? parsedSettings.auto_play : initialAppSettings.auto_play),
+              playback_speed: parsedSettings.playbackSpeed !== undefined ? parsedSettings.playbackSpeed : (parsedSettings.playback_speed !== undefined ? parsedSettings.playback_speed : initialAppSettings.playback_speed),
+            };
+          } catch (e) { console.error("Failed to parse 'greasemonkey-settings' from localStorage:", e); }
+        }
+        setAppSettings(settingsToApply);
+        localStorage.setItem(`greasemonkey-settings-${user.id}`, JSON.stringify(settingsToApply));
+
+        // Load conversation history - either for selected vehicle or general
+        await loadConversationHistory(selectedVehicle?.id || null, user.id);
+
+        // Load user stats (vehicles, documents, tier info)
+        await loadUserStats();
+
+      } catch (error) {
+        console.error("Error during initial app data loading:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeAppData();
+
+    // Event listener for browser back/forward for tab changes (restored)
+    const handlePopState = () => {
+      const urlTabOnPop = getTabFromUrl();
+      setActiveTab(urlTabOnPop);
+
+      // Also handle vehicle changes from URL
+      const urlVehicleOnPop = getVehicleFromUrl();
+      if (urlVehicleOnPop && userStats?.vehicles?.vehicles) {
+        const vehicleFromUrl = userStats.vehicles.vehicles.find(v => v.id === urlVehicleOnPop);
+        if (vehicleFromUrl && vehicleFromUrl.id !== selectedVehicle?.id) {
+          setSelectedVehicle(vehicleFromUrl);
+          saveSelectedVehicle(vehicleFromUrl);
+        }
+      } else if (!urlVehicleOnPop && selectedVehicle) {
+        setSelectedVehicle(null);
+        saveSelectedVehicle(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+
+    // Storage event listener (for changes from other tabs/windows)
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === 'greasemonkey-settings' && event.newValue) {
+        try {
+          const newSettings = JSON.parse(event.newValue);
+          const updatedSettings = {
+            voice_enabled: newSettings.voiceEnabled !== undefined ? newSettings.voiceEnabled : (newSettings.voice_enabled !== undefined ? newSettings.voice_enabled : initialAppSettings.voice_enabled),
+            auto_play: newSettings.autoPlay !== undefined ? newSettings.autoPlay : (newSettings.auto_play !== undefined ? newSettings.auto_play : initialAppSettings.auto_play),
+            playback_speed: newSettings.playbackSpeed !== undefined ? newSettings.playbackSpeed : (newSettings.playback_speed !== undefined ? newSettings.playback_speed : initialAppSettings.playback_speed),
+          };
+          setAppSettings(updatedSettings);
+        } catch (e) { console.error("Failed to parse 'greasemonkey-settings' from storage event:", e); }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    // Custom event listener (for changes from same window/tab)
+    const handleSettingsChange = (event: CustomEvent) => {
+            try {
+        const newSettings = event.detail;
+
+        const updatedSettings = {
+          voice_enabled: newSettings.voiceEnabled !== undefined ? newSettings.voiceEnabled : (newSettings.voice_enabled !== undefined ? newSettings.voice_enabled : appSettings.voice_enabled),
+          auto_play: newSettings.autoPlay !== undefined ? newSettings.autoPlay : (newSettings.auto_play !== undefined ? newSettings.auto_play : appSettings.auto_play),
+          playback_speed: newSettings.playbackSpeed !== undefined ? newSettings.playbackSpeed : (newSettings.playback_speed !== undefined ? newSettings.playback_speed : appSettings.playback_speed),
+        };
+
+        setAppSettings(updatedSettings);
+      } catch (e) { console.error("Failed to handle 'greasemonkey-settings-changed' event:", e); }
+    };
+    window.addEventListener('greasemonkey-settings-changed', handleSettingsChange as EventListener);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('greasemonkey-settings-changed', handleSettingsChange as EventListener);
+    };
+  }, [selectedVehicle, loadConversationHistory]); // Updated dependencies
+
+  // Initialize audio element
+  useEffect(() => {
+    if (audioRef.current) {
+      const audio = audioRef.current
+      audio.volume = 1.0
+      audio.muted = false
+      console.log('Audio element initialized:', {
+        volume: audio.volume,
+        muted: audio.muted
+      })
+    }
+
+    // Expose test function globally for debugging
+    ;(window as any).testWorkingAudio = testWorkingAudio
+    ;(window as any).audioDebug = () => {
+      if (audioRef.current) {
+        console.log('Audio element debug info:', {
+          src: audioRef.current.src,
+          volume: audioRef.current.volume,
+          muted: audioRef.current.muted,
+          duration: audioRef.current.duration,
+          currentTime: audioRef.current.currentTime,
+          paused: audioRef.current.paused,
+          readyState: audioRef.current.readyState,
+          networkState: audioRef.current.networkState
+        })
+      }
+    }
+
   }, [])
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      blobUrls.forEach(url => {
+        URL.revokeObjectURL(url)
+      })
+    }
+  }, [blobUrls])
+
+    // Load conversation history when selected vehicle changes
+  useEffect(() => {
+    console.log('🚗 Vehicle changed effect triggered:', {
+      vehicleId: selectedVehicle?.id,
+      currentHistoryLength: conversationHistory.length
+    })
+
+    // TEMPORARILY DISABLED to debug duplicates
+    // loadConversationHistory(selectedVehicle?.id || null, user.id)
+
+    console.log('⚠️ Conversation history loading DISABLED for debugging')
+  }, [selectedVehicle?.id, loadConversationHistory])
+
+  // Load selected vehicle when userStats changes
+  useEffect(() => {
+    if (userStats?.vehicles?.vehicles?.length && !selectedVehicle) {
+      // First try to load from URL parameter
+      const vehicleIdFromUrl = getVehicleFromUrl();
+      if (vehicleIdFromUrl) {
+        const vehicleFromUrl = userStats.vehicles.vehicles.find(v => v.id === vehicleIdFromUrl);
+        if (vehicleFromUrl) {
+          setSelectedVehicle(vehicleFromUrl);
+          saveSelectedVehicle(vehicleFromUrl);
+          return;
+        }
+      }
+
+      // If no URL parameter or vehicle not found, try localStorage
+      loadSelectedVehicle();
+    }
+  }, [userStats?.vehicles?.vehicles, selectedVehicle, loadSelectedVehicle])
 
   useEffect(() => {
     // Save conversation history when it changes
     saveConversationHistory(conversationHistory)
   }, [conversationHistory])
 
-  const loadUserStats = async () => {
-    try {
-      const response = await apiGet('/api/user/stats')
-      if (response.ok) {
-        const stats = await response.json()
-        setUserStats(stats)
+  // Reset pagination when selected vehicle changes
+  useEffect(() => {
+    setCurrentPage(0)
+    const vehicleHistory = getVehicleConversationHistory()
+    setHasMoreMessages(vehicleHistory.length > messagesPerPage)
+  }, [selectedVehicle?.id, conversationHistory.length])
 
-        // Auto-select the first vehicle if none selected
-        if (stats.vehicles.vehicles.length > 0 && !selectedVehicle) {
-          setSelectedVehicle(stats.vehicles.vehicles[0].id)
-        }
+  // Update hasMoreMessages when conversation history changes
+  useEffect(() => {
+    const vehicleHistory = getVehicleConversationHistory()
+    const totalDisplayed = (currentPage + 1) * messagesPerPage
+    setHasMoreMessages(vehicleHistory.length > totalDisplayed)
+  }, [conversationHistory, currentPage, selectedVehicle?.id])
+
+  const loadUserStats = useCallback(async () => {
+    if (!user.id) return;
+    try {
+      console.log('Loading user stats for user:', user.id);
+      const response = await apiGet('/api/user/stats');
+
+      if (!response.ok) {
+        throw new Error(`Failed to load user stats: ${response.status}`);
       }
-    } catch (error) {
-      console.error('Failed to load user stats:', error)
-    }
-  }
 
-  const loadConversationHistory = () => {
+      const data = await response.json();
+      console.log('User stats loaded:', data);
+      setUserStats(data);
+    } catch (error) {
+      console.error('Failed to load user stats:', error);
+      setUserStats(null);
+    }
+  }, [user.id]);
+
+  const saveConversationHistory = useCallback((history: ConversationMessage[], vehicleIdToSave?: string | null, userIdToSave?: string | null) => {
+    const effectiveUserId = userIdToSave || user.id;
+    if (!effectiveUserId) return;
+
+    const targetVehicleId = vehicleIdToSave !== undefined ? vehicleIdToSave : selectedVehicle?.id;
     try {
-      const saved = localStorage.getItem('greasemonkey-conversation-history')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        setConversationHistory(parsed.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp)
-        })))
-      }
+      const key = `greasemonkey-conversation-history-${effectiveUserId}${targetVehicleId ? `-${targetVehicleId}` : '-general'}`;
+      localStorage.setItem(key, JSON.stringify(history));
     } catch (error) {
-      console.error('Failed to load conversation history:', error)
+      console.error('Error saving conversation history to localStorage:', error);
     }
-  }
+  }, [selectedVehicle?.id]);
 
-  const saveConversationHistory = (messages: ConversationMessage[]) => {
-    try {
-      localStorage.setItem('greasemonkey-conversation-history', JSON.stringify(messages))
-    } catch (error) {
-      console.error('Failed to save conversation history:', error)
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    updateUrlForTab(tab);
+    if (isSidebarOpen) {
+      setIsSidebarOpen(false);
     }
-  }
+  };
 
-  const addToConversationHistory = (question: string, answer: string, audioUrl?: string) => {
+        const addToConversationHistory = (question: string, answer: string, audioUrl?: string) => {
+    console.log('🔥 addToConversationHistory called:', {
+      question: question.substring(0, 50),
+      currentHistoryLength: conversationHistory.length,
+      stack: new Error().stack?.split('\n').slice(1, 4).join(' -> ')
+    })
+
+    const combination = `${question.trim()}|||${answer.trim()}`;
+
+    // Check ref-based tracking first (immediate, synchronous check)
+    if (processedCombinationsRef.current.has(combination)) {
+      console.log('❌ Duplicate detected via ref tracking, skipping:', { question: question.substring(0, 50) })
+      return
+    }
+
+    // Check if this exact question/answer combo already exists in current history
+    const isDuplicate = conversationHistory.some((msg) =>
+      msg.question.trim() === question.trim() &&
+      msg.answer.trim() === answer.trim()
+    )
+
+    if (isDuplicate) {
+      console.log('❌ Duplicate detected in conversation history, skipping:', { question: question.substring(0, 50) })
+      return
+    }
+
+    // Add to tracking ref BEFORE creating the message
+    processedCombinationsRef.current.add(combination)
+
+    console.log('✅ Adding new message, no duplicates found')
+
     const newMessage: ConversationMessage = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // More unique ID
       question,
       answer,
       audioUrl,
       timestamp: new Date(),
-      vehicleId: selectedVehicle || undefined,
+      vehicleId: selectedVehicle?.id || undefined,
       vehicleContext: selectedVehicle ? getSelectedVehicleDisplayName() : undefined
     }
 
-    const updatedHistory = [newMessage, ...conversationHistory].slice(0, 50) // Keep last 50 messages
-    setConversationHistory(updatedHistory)
+    // Use functional update to ensure we have the latest state
+    setConversationHistory(prevHistory => {
+      // Double-check for duplicates with the latest state
+      const latestDuplicate = prevHistory.some((msg) =>
+        msg.question.trim() === question.trim() &&
+        msg.answer.trim() === answer.trim()
+      )
+
+      if (latestDuplicate) {
+        console.log('❌ Last-second duplicate detected with latest state, skipping')
+        return prevHistory
+      }
+
+      const updatedHistory = [newMessage, ...prevHistory].slice(0, 50)
+      console.log('✅ Message added successfully:', {
+        newHistoryLength: updatedHistory.length,
+        messageId: newMessage.id
+      })
+      return updatedHistory
+    })
   }
 
   const clearConversationHistory = async () => {
     setConversationHistory([])
-    localStorage.removeItem('greasemonkey-conversation-history')
+    processedCombinationsRef.current.clear()
+    // Remove both general and vehicle-specific conversation histories for this user
+    const userId = user.id
+    localStorage.removeItem(`greasemonkey-conversation-history-${userId}-general`)
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(`greasemonkey-conversation-history-${userId}-`)) {
+        localStorage.removeItem(key)
+      }
+    }
     // Also clear current conversation
     setCurrentQuestion('')
     setCurrentAnswer('')
@@ -184,7 +622,7 @@ function MainApp() {
   }
 
   const getSelectedVehicle = () => {
-    return userStats?.vehicles.vehicles.find(v => v.id === selectedVehicle)
+    return userStats?.vehicles.vehicles.find(v => v.id === selectedVehicle?.id)
   }
 
   const getSelectedVehicleDisplayName = () => {
@@ -201,8 +639,37 @@ function MainApp() {
 
   // Filter conversation history by selected vehicle
   const getVehicleConversationHistory = () => {
-    if (!selectedVehicle) return []
-    return conversationHistory.filter(msg => msg.vehicleId === selectedVehicle)
+    if (!selectedVehicle) {
+      // Show general conversations (no vehicle) when no vehicle is selected
+      return conversationHistory.filter(msg => !msg.vehicleId)
+    }
+    return conversationHistory.filter(msg => msg.vehicleId === selectedVehicle.id)
+  }
+
+  // Get paginated messages for display
+  const getPaginatedMessages = (): ConversationMessage[] => {
+    const vehicleHistory = getVehicleConversationHistory()
+    const startIndex = 0
+    const endIndex = (currentPage + 1) * messagesPerPage
+    return vehicleHistory.slice(startIndex, endIndex)
+  }
+
+  // Load more messages
+  const loadMoreMessages = async () => {
+    if (isLoadingMoreMessages) return
+
+    setIsLoadingMoreMessages(true)
+
+    // Simulate loading delay (remove if not needed)
+    await new Promise(resolve => setTimeout(resolve, 300))
+
+    const vehicleHistory = getVehicleConversationHistory()
+    const nextPage = currentPage + 1
+    const totalPossible = nextPage * messagesPerPage
+
+    setCurrentPage(nextPage)
+    setHasMoreMessages(vehicleHistory.length > totalPossible)
+    setIsLoadingMoreMessages(false)
   }
 
   const handleSelectPlan = (planId: string, billingType: 'monthly' | 'yearly') => {
@@ -214,23 +681,46 @@ function MainApp() {
 
   const handleSignOut = async () => {
     try {
-      // Clear local storage first
+      // Clear user-specific localStorage data
+      const userId = user.id
       localStorage.removeItem('greasemonkey-user')
-      localStorage.removeItem('greasemonkey-conversation-history')
-      localStorage.removeItem('greasemonkey-settings')
+      localStorage.removeItem(`greasemonkey-conversation-history-${userId}-general`)
+      localStorage.removeItem(`greasemonkey-settings-${userId}`)
+      localStorage.removeItem(`greasemonkey-unit-preferences-${userId}`)
 
-      // Actually sign out from Supabase
+      // Clear any vehicle-specific conversation histories for this user
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key?.startsWith(`greasemonkey-conversation-history-${userId}-`)) {
+          localStorage.removeItem(key)
+        }
+      }
       const { signOut } = await import('@/lib/supabase')
       await signOut()
-
-      // Force reload to trigger AuthGuard re-evaluation
       window.location.href = window.location.href
     } catch (error) {
       console.error('Sign out error:', error)
-      // Even if sign out fails, force reload to reset state
       window.location.href = window.location.href
     }
-  }
+  };
+
+  const handleToggleAutoplay = async () => {
+    const newAutoPlayState = !appSettings.auto_play;
+    const updatedAppSettings = { ...appSettings, auto_play: newAutoPlayState };
+    setAppSettings(updatedAppSettings);
+    localStorage.setItem(`greasemonkey-settings-${user.id}`, JSON.stringify(updatedAppSettings));
+
+    // Dispatch custom event to notify other components (like SettingsPage if it's open)
+    window.dispatchEvent(new CustomEvent('greasemonkey-settings-changed', {
+      detail: updatedAppSettings
+    }));
+
+    try {
+      await apiPut('/api/user/preferences', { auto_play: newAutoPlayState });
+    } catch (error) {
+      console.error('Failed to save autoplay preference to API:', error);
+    }
+  };
 
   const startRecording = async () => {
     try {
@@ -274,10 +764,8 @@ function MainApp() {
 
   const transcribeAudio = async (audioBlob: Blob) => {
     try {
-      setIsProcessing(true)
       const formData = new FormData()
       formData.append('audio', audioBlob, 'recording.webm')
-      formData.append('user_id', DEFAULT_USER_ID)
 
       const response = await apiPostFormData('/api/stt', formData)
 
@@ -289,26 +777,45 @@ function MainApp() {
       } else {
         console.error('Transcription failed')
         setCurrentAnswer('❌ Sorry, I couldn\'t understand your question. Please try again.')
+        setIsProcessing(false)
       }
     } catch (error) {
       console.error('Error transcribing audio:', error)
       setCurrentAnswer('❌ Sorry, there was an error processing your voice. Please try again.')
-    } finally {
       setIsProcessing(false)
     }
+    // Note: Don't call setIsProcessing(false) here if askQuestion was successful
+    // because askQuestion will handle setting isProcessing to false
   }
 
-  const askQuestion = async (questionText: string = currentQuestion) => {
+      const askQuestion = async (questionText: string = currentQuestion) => {
     if (!questionText.trim()) return
 
+    // Prevent duplicate calls - early return if already processing
+    if (isProcessing) {
+      console.log('askQuestion called while already processing, skipping duplicate request')
+      return
+    }
+
+    // Prevent processing the same question twice in a row
+    if (lastProcessedQuestionRef.current === questionText) {
+      console.log('Skipping duplicate question:', questionText)
+      return
+    }
+
+    // Set the processing question for UI display
+    setProcessingQuestion(questionText)
     setIsProcessing(true)
     setCurrentAnswer('')
     setCurrentAudioUrl(null)
+    lastProcessedQuestionRef.current = questionText
+    // Stop any currently playing audio
+    stopAudio()
 
     try {
       const response = await apiPost('/api/ask', {
         question: questionText,
-        vehicleId: selectedVehicle || undefined,
+        vehicleId: selectedVehicle?.id || undefined,
         includeDocuments: true,
       })
 
@@ -324,34 +831,309 @@ function MainApp() {
         setCurrentAnswer(data.response)
         if (data.audioUrl) {
           setCurrentAudioUrl(data.audioUrl)
+          // Auto-play the audio response only if setting is enabled
+          if (appSettings.auto_play) {
+            setTimeout(() => {
+              console.log('Auto-playing audio:', data.audioUrl)
+              playAudio(data.audioUrl)
+            }, 1000) // Longer delay to ensure UI and audio element are ready
+          }
+        }
+
+        // Handle auto-switched vehicle
+        if (data.autoSwitchedVehicle && !selectedVehicle) {
+          // Find the full vehicle object from userStats
+          const autoSwitchedVehicleObj = userStats?.vehicles.vehicles.find(v => v.id === data.autoSwitchedVehicle.id)
+          if (autoSwitchedVehicleObj) {
+            setSelectedVehicle(autoSwitchedVehicleObj)
+            console.log('Auto-switched to vehicle:', autoSwitchedVehicleObj)
+          }
+        }
+
+        // Handle vehicle confirmation request (for medium confidence)
+        if (data.needsVehicleConfirmation) {
+          console.log('Vehicle confirmation needed for:', data.needsVehicleConfirmation)
+          // The AI response should already include the confirmation question
+          // We don't need to do anything special here since the AI will ask in its response
         }
 
         // Add to conversation history
         addToConversationHistory(questionText, data.response, data.audioUrl)
+
+        // Reset pagination to show new message at the top
+        setCurrentPage(0)
+
+        // Clear current answer to prevent duplicate display
+        setCurrentAnswer('')
       }
 
       if (!data.error) {
-        loadUserStats()
+        // Don't reload user stats immediately after adding a message
+        // This prevents triggering conversation history reload which causes duplicates
+        setTimeout(() => {
+          loadUserStats()
+        }, 100) // Small delay to let conversation history settle
       }
     } catch (error) {
       console.error('Error:', error)
       setCurrentAnswer('❌ Sorry, there was an error processing your request.')
     } finally {
       setIsProcessing(false)
+      setProcessingQuestion('')
     }
   }
 
-  const playAudio = () => {
-    if (audioRef.current && currentAudioUrl) {
+  const playAudio = (audioUrl: string = currentAudioUrl || '') => {
+    if (!audioUrl || !audioRef.current) {
+      console.log('Cannot play audio: missing URL or audio element')
+      return
+    }
+
+    console.log('Playing audio:', audioUrl.substring(0, 50) + '...')
+
+    // Stop any currently playing audio first
+    stopAudio()
+
+    // Wait a bit for the stop to complete, then play new audio
+    setTimeout(() => {
+      if (audioRef.current) {
+        let finalUrl = audioUrl
+
+        // Convert data URL to blob URL for better browser compatibility
+        if (audioUrl.startsWith('data:audio/')) {
+          try {
+            console.log('Converting data URL to blob URL')
+            const [header, base64Data] = audioUrl.split(',')
+            const mimeType = header.match(/data:([^;]+)/)?.[1] || 'audio/mpeg'
+            const byteCharacters = atob(base64Data)
+            const byteArray = new Uint8Array(byteCharacters.length)
+
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteArray[i] = byteCharacters.charCodeAt(i)
+            }
+
+            const blob = new Blob([byteArray], { type: mimeType })
+            finalUrl = URL.createObjectURL(blob)
+            setBlobUrls(prev => [...prev, finalUrl])
+            console.log('Created blob URL:', finalUrl, 'Size:', blob.size, 'bytes', 'Type:', blob.type)
+
+            // Test the blob by trying to create an Audio object
+            const testAudio = new Audio(finalUrl)
+            testAudio.addEventListener('loadedmetadata', () => {
+              console.log('Test audio loaded metadata successfully, duration:', testAudio.duration)
+            })
+            testAudio.addEventListener('error', (e) => {
+              console.error('Test audio failed to load:', e, testAudio.error)
+            })
+            testAudio.load()
+          } catch (error) {
+            console.error('Error converting to blob URL:', error)
+            // Fall back to original URL
+          }
+        }
+
+        // Set the source and load the audio
+        audioRef.current.src = finalUrl
+
+        // Ensure volume and unmuted
+        audioRef.current.volume = 1.0
+        audioRef.current.muted = false
+
+        setCurrentPlayingAudio(audioUrl) // Keep original URL for state management
+        setIsPlaying(true)
+
+        console.log('Audio element state before load:', {
+          src: finalUrl,
+          volume: audioRef.current.volume,
+          muted: audioRef.current.muted,
+          duration: audioRef.current.duration,
+          readyState: audioRef.current.readyState
+        })
+
+        // Wait for audio to be ready before playing
+        const tryPlay = () => {
+          if (audioRef.current && audioRef.current.readyState >= 3) {
+            console.log('Attempting to play, readyState:', audioRef.current.readyState)
+
+            const playPromise = audioRef.current.play()
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  console.log('Audio started playing successfully')
+                  console.log('Audio playing state:', {
+                    currentTime: audioRef.current?.currentTime,
+                    duration: audioRef.current?.duration,
+                    paused: audioRef.current?.paused,
+                    volume: audioRef.current?.volume,
+                    muted: audioRef.current?.muted,
+                    readyState: audioRef.current?.readyState
+                  })
+                })
+                .catch(error => {
+                  console.error('Audio play failed:', error)
+                  if (error.name === 'NotAllowedError') {
+                    console.log('Autoplay was prevented by browser policy. User interaction required.')
+                    alert('Click the play button to hear the audio response (browser autoplay policy)')
+                  }
+                  // Don't mark as broken if it's just autoplay policy
+                  if (error.name !== 'NotAllowedError') {
+                    setBrokenAudioUrls(prev => new Set(prev).add(audioUrl))
+                  }
+                  setIsPlaying(false)
+                  setCurrentPlayingAudio(null)
+                })
+            }
+          } else {
+            console.log('Audio not ready yet, readyState:', audioRef.current?.readyState)
+          }
+        }
+
+        // Set up event listener for when audio can play through
+        const handleCanPlayThrough = () => {
+          console.log('Audio can play through - attempting to start, readyState:', audioRef.current?.readyState)
+          tryPlay()
+          audioRef.current?.removeEventListener('canplaythrough', handleCanPlayThrough)
+        }
+
+        const handleLoadedData = () => {
+          console.log('Audio loaded data, readyState:', audioRef.current?.readyState)
+          if (audioRef.current && audioRef.current.readyState >= 3) {
+            tryPlay()
+            audioRef.current?.removeEventListener('loadeddata', handleLoadedData)
+          }
+        }
+
+        audioRef.current.addEventListener('canplaythrough', handleCanPlayThrough)
+        audioRef.current.addEventListener('loadeddata', handleLoadedData)
+
+        // Force reload of the audio
+        audioRef.current.load()
+
+        // Fallback: try to play after delays
+        setTimeout(() => {
+          if (audioRef.current && audioRef.current.readyState >= 3) {
+            console.log('Fallback play attempt 1s')
+            tryPlay()
+          } else {
+            console.log('1s fallback - not ready, readyState:', audioRef.current?.readyState)
+          }
+        }, 1000)
+
+        setTimeout(() => {
+          if (audioRef.current && audioRef.current.readyState >= 3) {
+            console.log('Fallback play attempt 3s')
+            tryPlay()
+          } else {
+            console.log('3s fallback - not ready, readyState:', audioRef.current?.readyState)
+            console.log('Trying Web Audio API fallback')
+            tryWebAudioPlayback(audioUrl)
+          }
+        }, 3000)
+      }
+    }, 150)
+  }
+
+  const stopAudio = () => {
+    if (audioRef.current) {
+      try {
+        if (!audioRef.current.paused) {
+          audioRef.current.pause()
+        }
+        audioRef.current.currentTime = 0
+      } catch (error) {
+        console.error('Error stopping audio:', error)
+      }
+    }
+    setIsPlaying(false)
+    setCurrentPlayingAudio(null)
+  }
+
+  const toggleAudio = (audioUrl: string = currentAudioUrl || '') => {
+    if (isPlaying && currentPlayingAudio === audioUrl) {
+      stopAudio()
+    } else {
+      playAudio(audioUrl)
+    }
+  }
+
+  const isAudioAvailable = (audioUrl: string | null | undefined) => {
+    return audioUrl && !brokenAudioUrls.has(audioUrl)
+  }
+
+  // Fallback audio playback using Web Audio API
+  const tryWebAudioPlayback = async (audioUrl: string) => {
+    try {
+      console.log('Attempting Web Audio API playback')
+
+      if (!audioUrl.startsWith('data:audio/')) {
+        console.log('Not a data URL, skipping Web Audio API')
+        return
+      }
+
+      const [header, base64Data] = audioUrl.split(',')
+      const byteCharacters = atob(base64Data)
+      const byteArray = new Uint8Array(byteCharacters.length)
+
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteArray[i] = byteCharacters.charCodeAt(i)
+      }
+
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const audioBuffer = await audioContext.decodeAudioData(byteArray.buffer)
+
+      console.log('Audio decoded successfully, duration:', audioBuffer.duration)
+
+      const source = audioContext.createBufferSource()
+      source.buffer = audioBuffer
+      source.connect(audioContext.destination)
+
+      source.start(0)
+      console.log('Web Audio API playback started')
+
+      // Update state
       setIsPlaying(true)
-      audioRef.current.play()
+      setCurrentPlayingAudio(audioUrl)
+
+      // Reset state when finished
+      source.onended = () => {
+        console.log('Web Audio API playback ended')
+        setIsPlaying(false)
+        setCurrentPlayingAudio(null)
+      }
+
+    } catch (error) {
+      console.error('Web Audio API playback failed:', error)
+      setIsPlaying(false)
+      setCurrentPlayingAudio(null)
     }
   }
 
-  const handleTextSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!currentQuestion.trim() || isProcessing) return
-    await askQuestion()
+  // Test with a known working audio file
+  const testWorkingAudio = () => {
+    if (audioRef.current) {
+      // Test with a tiny working MP3 (silence)
+      const silentMp3 = 'data:audio/mp3;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwBURU5DAAAAHQAAAE1wZWdhIG1wM2Vwb2NoIDEuMjAuMQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUElORwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4P////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMz//MUZAYAAAGkAAAAAAAAA0gAAAAAOTU=';
+
+      console.log('Testing with known working audio')
+      audioRef.current.src = silentMp3
+      audioRef.current.load()
+
+      const testPlay = () => {
+        if (audioRef.current) {
+          console.log('Test audio readyState:', audioRef.current.readyState)
+          if (audioRef.current.readyState >= 3) {
+            audioRef.current.play().then(() => {
+              console.log('Test audio played successfully!')
+            }).catch(e => {
+              console.error('Test audio play failed:', e)
+            })
+          }
+        }
+      }
+
+      audioRef.current.addEventListener('canplaythrough', testPlay)
+      setTimeout(testPlay, 1000)
+    }
   }
 
   // Vehicle management
@@ -402,8 +1184,10 @@ function MainApp() {
     try {
       const response = await apiDelete(`/api/vehicles/${vehicleId}`)
       if (response.ok) {
-        if (selectedVehicle === vehicleId) {
-          setSelectedVehicle('')
+        if (selectedVehicle?.id === vehicleId) {
+          setSelectedVehicle(null)
+          saveSelectedVehicle(null)
+          updateUrlForVehicle(null)
         }
         await loadUserStats()
       } else {
@@ -465,48 +1249,176 @@ function MainApp() {
     }
   }
 
-  // Layout wrapper for all tabs
-  const PageLayout = ({ children }: { children: React.ReactNode }) => (
-    <div className="min-h-screen relative">
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
-        <Card variant="glass" className="overflow-hidden">
-          <CardHeader>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="bg-gradient-to-r from-orange-500 to-red-500 p-3 rounded-2xl shadow-glow animate-float">
-                  <span className="text-2xl">🔧</span>
-                </div>
-                <div>
-                  <CardTitle className="text-gradient">GreaseMonkey AI</CardTitle>
-                  <p className="text-zinc-400 mt-1">Your voice-first automotive assistant</p>
-                </div>
-              </div>
+  // Chat handlers - defined at top level to avoid conditional hooks
+  const handleChatSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault()
+    if (currentQuestion.trim() && !isProcessing) {
+      askQuestion(currentQuestion)
+      setCurrentQuestion('')
+    }
+  }, [currentQuestion, askQuestion, isProcessing])
 
-              <ClientOnly fallback={<div className="h-10 w-48 skeleton" />}>
-                <div className="relative">
-                  <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
-                </div>
-              </ClientOnly>
-            </div>
-          </CardHeader>
+  const handlePlayAudio = useCallback((audioUrl?: string) => {
+    if (audioUrl) {
+      toggleAudio(audioUrl)
+    } else if (currentAudioUrl) {
+      toggleAudio(currentAudioUrl)
+    }
+  }, [currentAudioUrl, toggleAudio])
 
-          <CardContent className="space-y-6">
-            {children}
-          </CardContent>
-        </Card>
+  // Define tabSpecificContent
+  let tabSpecificContent: React.ReactNode = null;
+
+  // Determine tabSpecificContent based on activeTab
+        if (activeTab === 'chat') {
+    const vehicleHistory = getVehicleConversationHistory()
+    tabSpecificContent = (
+      <ChatInterface
+        question={currentQuestion}
+        setQuestion={setCurrentQuestion}
+        answer={currentAnswer}
+        isRecording={isRecording}
+        isProcessing={isProcessing}
+        processingQuestion={processingQuestion}
+        audioUrl={currentAudioUrl}
+        conversationHistory={vehicleHistory}
+        onStartRecording={startRecording}
+        onStopRecording={stopRecording}
+        onSubmit={handleChatSubmit}
+        onPlayAudio={handlePlayAudio}
+        isPlaying={isPlaying}
+        currentPlayingAudio={currentPlayingAudio}
+        isVoiceInputGloballyEnabled={appSettings.voice_enabled}
+        isAutoplayEnabled={appSettings.auto_play}
+        onToggleAutoplay={handleToggleAutoplay}
+      />
+    );
+  } else if (activeTab === 'garage') {
+    tabSpecificContent = (
+      <div className="p-4">
+        <VehicleManager
+          vehicles={userStats?.vehicles.vehicles || []}
+          onCreateVehicle={createVehicle}
+          onUpdateVehicle={updateVehicle}
+          onDeleteVehicle={deleteVehicle}
+          selectedVehicle={selectedVehicle?.id}
+          onVehicleSelect={(vehicleId: string) => {
+            const vehicleToSelect = userStats?.vehicles.vehicles.find(v => v.id === vehicleId);
+            setSelectedVehicle(vehicleToSelect || null);
+            saveSelectedVehicle(vehicleToSelect || null);
+            updateUrlForVehicle(vehicleToSelect?.id || null);
+          }}
+          userStats={userStats}
+        />
       </div>
+    );
+  } else if (activeTab === 'documents') {
+    tabSpecificContent = (
+      <div className="p-4">
+        <DocumentManager
+          documents={userStats?.documents.documents || []}
+          onUploadDocument={uploadDocument}
+          onDeleteDocument={deleteDocument}
+          userTier={userStats?.tier || 'free_tier'}
+          userStats={userStats}
+        />
+      </div>
+    );
+  } else if (activeTab === 'settings') {
+    tabSpecificContent = (
+      <div className="p-4">
+        <SettingsPage
+          userStats={userStats}
+          onClearHistory={clearConversationHistory}
+          onSignOut={handleSignOut}
+          onUpgrade={() => setShowPricing(true)}
+          appSettings={appSettings}
+          user={user}
+        />
+      </div>
+    );
+  } else {
+    tabSpecificContent = (
+      <div className="flex items-center justify-center h-full">
+        <div>Loading...</div>
+      </div>
+    );
+  }
 
-      {currentAudioUrl && (
+  // Common props for MobileLayout
+  const commonLayoutProps = {
+    activeTab,
+    onTabChange: handleTabChange,
+    userStats,
+  };
+
+  // Chat-specific props for MobileLayout, only defined if chat tab is active
+  const chatLayoutProps = activeTab === 'chat' ? {
+    vehicles: userStats?.vehicles.vehicles || [],
+    selectedVehicle: selectedVehicle?.id,
+    onVehicleSelect: (vehicleId: string) => {
+      const vehicleToSelect = userStats?.vehicles.vehicles.find(v => v.id === vehicleId);
+      setSelectedVehicle(vehicleToSelect || null);
+      saveSelectedVehicle(vehicleToSelect || null);
+      updateUrlForVehicle(vehicleToSelect?.id || null);
+    },
+  } : {};
+
+
+
+  return (
+    <>
+      <MobileLayout {...commonLayoutProps} {...chatLayoutProps}>
+        {tabSpecificContent}
         <audio
           ref={audioRef}
-          src={currentAudioUrl}
           className="hidden"
-          onEnded={() => setIsPlaying(false)}
-          onPause={() => setIsPlaying(false)}
+          preload="none"
+          onLoadedData={() => {
+            console.log('Audio loaded and ready to play')
+            if (audioRef.current) {
+              audioRef.current.volume = 1.0
+              audioRef.current.muted = false
+            }
+          }}
+          onPlay={() => console.log('Audio play event fired')}
+          onPlaying={() => console.log('Audio is actually playing now')}
+          onEnded={() => {
+            console.log('Audio ended')
+            setIsPlaying(false)
+            setCurrentPlayingAudio(null)
+          }}
+          onPause={() => {
+            console.log('Audio paused')
+            setIsPlaying(false)
+            setCurrentPlayingAudio(null)
+          }}
+          onError={(e) => {
+            const audioElement = e.target as HTMLAudioElement
+            const errorInfo = {
+              code: audioElement?.error?.code,
+              message: audioElement?.error?.message,
+              networkState: audioElement?.networkState,
+              readyState: audioElement?.readyState,
+              src: audioElement?.src
+            }
+            console.error('Audio error:', errorInfo)
+            if (currentPlayingAudio) {
+              setBrokenAudioUrls(prev => new Set(prev).add(currentPlayingAudio))
+            }
+            setIsPlaying(false)
+            setCurrentPlayingAudio(null)
+          }}
+          onCanPlay={() => console.log('Audio can start playing')}
+          onVolumeChange={() => {
+            if (audioRef.current) {
+              console.log('Volume changed to:', audioRef.current.volume, 'Muted:', audioRef.current.muted)
+            }
+          }}
         />
-      )}
+      </MobileLayout>
 
-      {/* Pricing Modal */}
+      {/* Pricing Modal - Rendered globally */}
       {showPricing && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-zinc-900 rounded-2xl border border-zinc-700 max-w-7xl w-full max-h-[90vh] overflow-auto">
@@ -530,300 +1442,14 @@ function MainApp() {
           </div>
         </div>
       )}
-    </div>
-  )
-
-  // Chat Tab - Voice-First Interface
-  if (activeTab === 'chat') {
-    const vehicleHistory = getVehicleConversationHistory()
-    const hasConversationHistory = vehicleHistory.length > 0 || currentAnswer
-
-    return (
-      <PageLayout>
-        {/* Vehicle Selection */}
-        {userStats && userStats.vehicles.count > 0 && (
-          <Card variant="glass">
-            <CardContent className="py-4">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <span className="text-sm text-zinc-400 shrink-0">Currently asking about:</span>
-                <div className="relative flex-1">
-                  <button
-                    onClick={() => setShowVehicleDropdown(!showVehicleDropdown)}
-                    className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl border border-zinc-700 hover:border-zinc-600 transition-all duration-200"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="bg-gradient-to-r from-orange-500 to-red-500 p-2 rounded-lg">
-                        <Car className="h-4 w-4 text-white" />
-                      </div>
-                      <div className="text-left">
-                        {selectedVehicle ? (
-                          <div>
-                            <div className="text-white font-medium">{getSelectedVehicleDisplayName()}</div>
-                            {getSelectedVehicle()?.nickname && (
-                              <div className="flex items-center gap-1 mt-1">
-                                <Heart className="h-3 w-3 text-pink-400" />
-                                <span className="text-xs text-pink-400">Nickname: {getSelectedVehicle()?.nickname}</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-zinc-400">Select a vehicle</span>
-                        )}
-                      </div>
-                    </div>
-                    <ChevronDown className={`h-5 w-5 text-zinc-400 transition-transform duration-200 ${showVehicleDropdown ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {showVehicleDropdown && (
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl z-10 max-h-60 overflow-y-auto">
-                      {userStats.vehicles.vehicles.map((vehicle) => (
-                        <button
-                          key={vehicle.id}
-                          onClick={() => {
-                            setSelectedVehicle(vehicle.id)
-                            setShowVehicleDropdown(false)
-                          }}
-                          className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-700 transition-all duration-200 ${
-                            selectedVehicle === vehicle.id ? 'bg-orange-500/10 border-r-2 border-orange-500' : ''
-                          }`}
-                        >
-                          <div className="bg-gradient-to-r from-orange-500 to-red-500 p-2 rounded-lg">
-                            <Car className="h-4 w-4 text-white" />
-                          </div>
-                          <div className="text-left flex-1">
-                            <div className="text-white font-medium">
-                              {vehicle.nickname ? `${vehicle.nickname} (${vehicle.displayName}${vehicle.trim ? ` ${vehicle.trim}` : ''})` : `${vehicle.displayName}${vehicle.trim ? ` ${vehicle.trim}` : ''}`}
-                            </div>
-                            {vehicle.nickname && (
-                              <div className="flex items-center gap-1 mt-1">
-                                <Heart className="h-3 w-3 text-pink-400" />
-                                <span className="text-xs text-pink-400">Nickname</span>
-                              </div>
-                            )}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {userStats && (
-          <UsageStatus userStats={userStats} />
-        )}
-
-        {/* Voice-First Interface */}
-        <div className="text-center space-y-6">
-          <VoiceInterface
-            isRecording={isRecording}
-            isProcessing={isProcessing}
-            audioUrl={currentAudioUrl}
-            isPlaying={isPlaying}
-            onStartRecording={startRecording}
-            onStopRecording={stopRecording}
-            onPlayAudio={playAudio}
-            onDiscardRecording={discardRecording}
-            showTips={!hasConversationHistory}
-          />
-
-          {/* Toggle for text input */}
-          <div className="flex items-center justify-center gap-4">
-            <Button
-              variant={showTextInput ? 'ghost' : 'outline'}
-              size="sm"
-              onClick={() => setShowTextInput(!showTextInput)}
-              icon={showTextInput ? <Mic className="h-4 w-4" /> : <Keyboard className="h-4 w-4" />}
-            >
-              {showTextInput ? 'Switch to Voice' : 'Use Keyboard'}
-            </Button>
-          </div>
-
-          {/* Text Input (when enabled) */}
-          {showTextInput && (
-            <Card variant="glass">
-              <CardContent className="py-4">
-                <form onSubmit={handleTextSubmit} className="flex gap-3">
-                  <Input
-                    value={currentQuestion}
-                    onChange={(e) => setCurrentQuestion(e.target.value)}
-                    placeholder="Type your automotive question..."
-                    disabled={isProcessing}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="submit"
-                    disabled={!currentQuestion.trim() || isProcessing}
-                    loading={isProcessing}
-                  >
-                    Ask
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Current Answer */}
-          {currentAnswer && (
-            <Card variant="elevated" className="text-left animate-in slide-in-from-bottom-2 duration-500">
-              <CardContent>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-gradient-to-r from-orange-500 to-red-500 p-3 rounded-xl shadow-lg">
-                      <Sparkles className="h-6 w-6 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-white text-lg">GreaseMonkey AI</h3>
-                      <p className="text-zinc-400 text-sm">
-                        {selectedVehicle
-                          ? `About your ${getSelectedVehicleDisplayName()}`
-                          : 'General automotive advice'
-                        }
-                      </p>
-                    </div>
-                  </div>
-
-                  {currentAudioUrl && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={playAudio}
-                      icon={<Volume2 className="h-4 w-4" />}
-                      className="shrink-0"
-                    >
-                      Play Audio
-                    </Button>
-                  )}
-                </div>
-
-                <div className="space-y-3 max-w-none">
-                  {currentAnswer.split('\n').map((line, index) => (
-                    <p key={index} className="mb-3 text-zinc-200 leading-relaxed last:mb-0">
-                      {line || '\u00A0'}
-                    </p>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Conversation History for Selected Vehicle */}
-          {vehicleHistory.length > 0 && (
-            <Card variant="glass">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-3">
-                    <MessageSquare className="h-5 w-5 text-orange-500" />
-                    Conversation History
-                    {selectedVehicle && (
-                      <span className="text-sm text-zinc-400">
-                        ({getSelectedVehicleDisplayName()})
-                      </span>
-                    )}
-                  </CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      // Clear only this vehicle's history
-                      const updatedHistory = conversationHistory.filter(msg => msg.vehicleId !== selectedVehicle)
-                      setConversationHistory(updatedHistory)
-                    }}
-                  >
-                    Clear History
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="max-h-96 overflow-y-auto">
-                <div className="space-y-4">
-                  {vehicleHistory.slice(0, 5).map((message) => (
-                    <div key={message.id} className="p-4 bg-zinc-800/50 rounded-lg">
-                      <div className="text-sm text-zinc-400 mb-2">
-                        {message.timestamp.toLocaleString()}
-                      </div>
-                      <div className="text-orange-300 font-medium mb-2">Q: {message.question}</div>
-                      <div className="text-zinc-300 text-sm line-clamp-3">{message.answer}</div>
-                      {message.audioUrl && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            const audio = new Audio(message.audioUrl)
-                            audio.play()
-                          }}
-                          className="mt-2"
-                        >
-                          <Volume2 className="h-4 w-4 mr-2" />
-                          Play Audio
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </PageLayout>
-    )
-  }
-
-  // Garage Tab
-  if (activeTab === 'garage') {
-    return (
-      <PageLayout>
-        <VehicleManager
-          vehicles={userStats?.vehicles.vehicles || []}
-          onCreateVehicle={createVehicle}
-          onUpdateVehicle={updateVehicle}
-          onDeleteVehicle={deleteVehicle}
-          selectedVehicle={selectedVehicle}
-          onVehicleSelect={setSelectedVehicle}
-          userStats={userStats}
-        />
-      </PageLayout>
-    )
-  }
-
-  // Documents Tab
-  if (activeTab === 'documents') {
-    return (
-      <PageLayout>
-        <DocumentManager
-          documents={userStats?.documents.documents || []}
-          onUploadDocument={uploadDocument}
-          onDeleteDocument={deleteDocument}
-          userTier={userStats?.tier || 'free_tier'}
-          userStats={userStats}
-        />
-      </PageLayout>
-    )
-  }
-
-  // Settings Tab
-  if (activeTab === 'settings') {
-    return (
-      <PageLayout>
-        <SettingsPage
-          userStats={userStats}
-          onClearHistory={clearConversationHistory}
-          onSignOut={handleSignOut}
-          onUpgrade={() => setShowPricing(true)}
-        />
-      </PageLayout>
-    )
-  }
-
-  // Default fallback
-  return <PageLayout><div>Loading...</div></PageLayout>
+    </>
+  );
 }
 
 export default function Home() {
   return (
     <AuthGuard>
-      <MainApp />
+      {(user: SupabaseUser) => <MainApp user={user} />}
     </AuthGuard>
   )
 }
