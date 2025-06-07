@@ -408,10 +408,10 @@ export const ChatInterface = memo(({
                   }
                 }}
                 placeholder="Or type your question..."
-                className="flex-1 w-full resize-none rounded-xl bg-zinc-800/80 border border-zinc-700/60 text-white placeholder-zinc-500 p-3 pr-16 shadow-lg focus:ring-2 focus:ring-orange-500/70 focus:border-orange-500/70 outline-none transition-all max-h-24 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-800"
+                className="flex-1 w-full resize-none rounded-xl bg-zinc-800/80 border border-zinc-700/60 text-white placeholder-zinc-500 p-3 pr-20 shadow-lg focus:ring-2 focus:ring-orange-500/70 focus:border-orange-500/70 outline-none transition-all max-h-24 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-800"
                 rows={1}
               />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                 <Button
                   type="submit"
                   size="sm"
@@ -427,7 +427,7 @@ export const ChatInterface = memo(({
                   size="sm"
                   variant="ghost"
                   onClick={onToggleAutoplay}
-                  className="text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 rounded-full p-1.5 ml-1"
+                  className="text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 rounded-full p-1.5"
                   title={isAutoplayEnabled ? "Disable Autoplay" : "Enable Autoplay"}
                 >
                   {isAutoplayEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}

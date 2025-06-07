@@ -345,19 +345,52 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
             Account & Billing
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Current Plan */}
-          <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-lg">
+                <CardContent className="space-y-4">
+          {/* User Info */}
+          <div className="space-y-3">
             <div className="flex items-center gap-3">
-              {getTierIcon(currentTier)}
+              <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-red-500 rounded-full flex items-center justify-center">
+                <User className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-white">{user.email}</p>
+                <p className="text-sm text-zinc-400">Account Email</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-800">
               <div>
-                <p className="font-medium text-white">{getTierDisplayName(currentTier)} Plan</p>
-                <p className="text-sm text-zinc-400">
-                  {userStats?.usage?.monthly?.ask_count || 0} questions this month
+                <p className="text-sm text-zinc-400">Plan</p>
+                <div className="flex items-center gap-2 mt-1">
+                  {getTierIcon(currentTier)}
+                  <p className="font-medium text-white">{getTierDisplayName(currentTier)}</p>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-zinc-400">Questions Used</p>
+                <p className="font-medium text-white mt-1">
+                  {userStats?.usage?.monthly?.ask_count || 0} this month
                 </p>
               </div>
             </div>
-            {isFreeTier && (
+
+            {userStats?.usage?.monthly?.last_reset && (
+              <div className="text-xs text-zinc-500 pt-2 border-t border-zinc-800">
+                Billing cycle resets: {new Date(userStats.usage.monthly.last_reset).toLocaleDateString()}
+              </div>
+            )}
+          </div>
+
+          {/* Current Plan Status */}
+          {isFreeTier && (
+            <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-lg">
+              <div className="flex items-center gap-3">
+                {getTierIcon(currentTier)}
+                <div>
+                  <p className="font-medium text-white">{getTierDisplayName(currentTier)} Plan</p>
+                  <p className="text-sm text-zinc-400">Limited features</p>
+                </div>
+              </div>
               <Button
                 onClick={onUpgrade}
                 size="sm"
@@ -366,8 +399,8 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
                 <ArrowUp className="h-4 w-4 mr-2" />
                 Upgrade
               </Button>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Free Tier Upgrade Prompt */}
           {isFreeTier && (
@@ -766,31 +799,10 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
             About GreaseMonkey
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl font-bold text-white">🐒</span>
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">GreaseMonkey AI</h3>
-            <p className="text-zinc-400 mb-4">
-              Your AI-powered automotive assistant
-            </p>
-            <div className="flex items-center justify-center gap-4 text-sm text-zinc-500">
-              <span>Version 1.0.0</span>
-              <span>•</span>
-              <span>PWA</span>
-            </div>
-          </div>
-
-          <div className="bg-zinc-900/50 rounded-lg p-4 text-center">
-            <p className="text-sm text-zinc-400">
-              Built with ❤️ for car enthusiasts everywhere
-            </p>
-            <div className="flex items-center justify-center gap-1 mt-2">
-              {[...Array(5)].map((_, i) => (
-                <Star key={i} className="h-4 w-4 text-yellow-400 fill-current" />
-              ))}
-            </div>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-zinc-400">Version</p>
+            <p className="font-medium text-white">0.1.0</p>
           </div>
         </CardContent>
       </Card>

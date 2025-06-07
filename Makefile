@@ -5,7 +5,7 @@
 PWA_DIR = pwa
 DOCKER_COMPOSE = docker-compose
 
-.PHONY: help dev build prod stop clean logs install test status up down restart
+.PHONY: help dev dev-no-stripe build prod stop clean logs install test status up down restart stripe-stop stripe-logs
 
 # Default target
 help: ## Show this help message
@@ -13,7 +13,8 @@ help: ## Show this help message
 	@echo "======================================="
 	@echo ""
 	@echo "🚀 Development Commands:"
-	@echo "  dev             - Start PWA development environment"
+	@echo "  dev             - Start PWA development environment (includes Stripe)"
+	@echo "  dev-no-stripe   - Start PWA without Stripe webhooks"
 	@echo "  prod-test       - Test production build locally"
 	@echo ""
 	@echo "🔨 Build Commands:"
@@ -28,6 +29,8 @@ help: ## Show this help message
 	@echo "  restart         - Restart PWA service"
 	@echo "  status          - Show service status"
 	@echo "  logs            - View PWA logs"
+	@echo "  stripe-stop     - Stop Stripe webhook forwarding"
+	@echo "  stripe-logs     - View Stripe webhook logs"
 	@echo ""
 	@echo "📦 Setup & Maintenance:"
 	@echo "  install         - Install dependencies"
@@ -36,7 +39,8 @@ help: ## Show this help message
 	@echo "  test            - Run tests"
 	@echo ""
 	@echo "Usage Examples:"
-	@echo "  make dev        # Start PWA development"
+	@echo "  make dev        # Start PWA development (includes Stripe)"
+	@echo "  make dev-no-stripe # Start PWA without Stripe webhooks"
 	@echo "  make prod-test  # Test production build"
 	@echo "  make clean      # Clean everything and start fresh"
 
@@ -49,7 +53,27 @@ dev: install build ## Start PWA development environment
 	@docker container prune -f || true
 	@echo "📱 PWA will be available at: http://localhost:3000"
 	@echo "🔥 Hot reload enabled"
-	@echo "✨ All-in-one: Frontend + API routes + Database"
+	@echo "💳 Stripe webhooks forwarding enabled"
+	@echo "✨ All-in-one: Frontend + API routes + Stripe webhooks"
+	$(DOCKER_COMPOSE) up pwa stripe -d
+	@echo "✅ PWA development environment started!"
+	@echo ""
+	@echo "🔗 Open: http://localhost:3000"
+	@echo "💳 Stripe webhooks: Forwarding to /api/stripe/webhook"
+	@echo "📊 Following logs (Ctrl+C to exit)..."
+	@echo ""
+	$(DOCKER_COMPOSE) logs -f pwa stripe
+
+dev-no-stripe: install build ## Start PWA development without Stripe webhooks
+	@echo "🚀 Starting PWA development environment (no Stripe)..."
+	@echo "🧹 Cleaning up existing containers..."
+	$(DOCKER_COMPOSE) down --remove-orphans
+	@echo "🔧 Removing any orphaned containers..."
+	@docker container prune -f || true
+	@echo "📱 PWA will be available at: http://localhost:3000"
+	@echo "🔥 Hot reload enabled"
+	@echo "⚠️  Stripe webhooks disabled - payments won't work"
+	@echo "✨ Minimal setup: Frontend + API routes only"
 	$(DOCKER_COMPOSE) up pwa -d
 	@echo "✅ PWA development environment started!"
 	@echo ""
@@ -136,6 +160,17 @@ test: ## Run tests
 	@echo "🧪 Running tests..."
 	@echo "⚠️  No tests configured yet for PWA"
 	@echo "✅ Tests completed"
+
+# Stripe Management
+stripe-stop: ## Stop Stripe webhook forwarding
+	@echo "🛑 Stopping Stripe webhook forwarding..."
+	$(DOCKER_COMPOSE) --profile stripe stop stripe
+	$(DOCKER_COMPOSE) --profile stripe rm -f stripe
+	@echo "✅ Stripe webhook forwarding stopped"
+
+stripe-logs: ## View Stripe webhook logs
+	@echo "📊 Stripe webhook logs (Ctrl+C to exit)..."
+	$(DOCKER_COMPOSE) logs -f stripe
 
 # Aliases for convenience
 up: dev ## Alias for dev

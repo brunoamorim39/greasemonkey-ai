@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card'
 import { Button } from './ui/Button'
 import {
@@ -14,9 +15,11 @@ import {
   Mic,
   Upload,
   MessageSquare,
-  Shield
+  Shield,
+  Loader2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { createCheckoutSession } from '@/lib/stripe'
 
 interface PricingPlan {
   id: string
@@ -112,23 +115,67 @@ const plans: PricingPlan[] = [
 
 interface PricingPlansProps {
   currentPlan?: string
+  userId?: string
   onSelectPlan?: (planId: string, billingType: 'monthly' | 'yearly') => void
   showCurrentPlan?: boolean
 }
 
 export function PricingPlans({
   currentPlan = 'free',
+  userId,
   onSelectPlan,
   showCurrentPlan = false
 }: PricingPlansProps) {
   const [billingType, setBillingType] = useState<'monthly' | 'yearly'>('monthly')
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const router = useRouter()
 
-  const handleSelectPlan = (planId: string) => {
+    const handleSelectPlan = async (planId: string) => {
+    console.log('🎯 Button clicked for plan:', planId, 'User ID:', userId)
+
+    if (planId === 'free') {
+      // Free plan - no checkout needed
+      console.log('🆓 Free plan selected')
+      if (onSelectPlan) {
+        onSelectPlan(planId, billingType)
+      }
+      return
+    }
+
+    if (!userId) {
+      // Redirect to home page where AuthGuard will show login form
+      console.log('❌ No user ID, redirecting to home')
+      router.push('/')
+      return
+    }
+
     if (onSelectPlan) {
+      // Custom handler provided
+      console.log('🔧 Using custom handler')
       onSelectPlan(planId, billingType)
-    } else {
-      // Dispatch event to show pricing modal
-      window.dispatchEvent(new CustomEvent('showPricing'))
+      return
+    }
+
+    // Default Stripe checkout flow
+    console.log('💳 Starting Stripe checkout for:', planId, 'billingType:', billingType)
+    try {
+      setLoadingPlan(planId)
+
+      console.log('📞 Calling createCheckoutSession...')
+      const checkoutUrl = await createCheckoutSession({
+        planId,
+        billingType: planId === 'master_tech' ? billingType : undefined,
+        userId
+      })
+
+      console.log('✅ Checkout URL received:', checkoutUrl)
+      // Redirect to Stripe checkout
+      window.location.href = checkoutUrl
+    } catch (error) {
+      console.error('❌ Error creating checkout session:', error)
+      alert('Failed to start checkout. Please try again.')
+    } finally {
+      setLoadingPlan(null)
     }
   }
 
@@ -210,7 +257,7 @@ export function PricingPlans({
                       <button
                         onClick={() => setBillingType('monthly')}
                         className={cn(
-                          'px-4 py-1 rounded-lg text-sm font-medium transition-all duration-200',
+                          'px-4 py-1 rounded-lg text-sm font-medium transition-colors duration-150',
                           billingType === 'monthly'
                             ? 'bg-orange-500 text-white shadow-lg'
                             : 'text-zinc-400 hover:text-white'
@@ -221,7 +268,7 @@ export function PricingPlans({
                       <button
                         onClick={() => setBillingType('yearly')}
                         className={cn(
-                          'px-4 py-1 rounded-lg text-sm font-medium transition-all duration-200 relative',
+                          'px-4 py-1 rounded-lg text-sm font-medium transition-colors duration-150 relative',
                           billingType === 'yearly'
                             ? 'bg-orange-500 text-white shadow-lg'
                             : 'text-zinc-400 hover:text-white'
@@ -311,19 +358,23 @@ export function PricingPlans({
                 {/* CTA Button */}
                 <Button
                   onClick={() => handleSelectPlan(plan.id)}
-                  disabled={isCurrentPlan && showCurrentPlan}
+                  disabled={isCurrentPlan || loadingPlan === plan.id}
                   className={cn(
                     "w-full",
                     plan.popular && "bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
                   )}
                   variant={plan.popular ? "primary" : "outline"}
-                  icon={<ArrowRight className="h-4 w-4" />}
+                  icon={loadingPlan === plan.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
                 >
-                  {isCurrentPlan && showCurrentPlan
-                    ? 'Current Plan'
-                    : plan.monthlyPrice === 0
-                      ? 'Get Started Free'
-                      : 'Upgrade to ' + plan.name
+                  {loadingPlan === plan.id
+                    ? 'Processing...'
+                    : isCurrentPlan
+                      ? 'Current Plan'
+                      : plan.id === 'free'
+                        ? 'Get Started'
+                        : plan.id === 'weekend_warrior'
+                          ? 'Set Up Billing'
+                          : 'Upgrade to ' + plan.name
                   }
                 </Button>
               </CardContent>
@@ -353,15 +404,15 @@ export function PricingPlans({
                 </p>
               </div>
               <div>
-                <h4 className="text-white font-medium mb-2">Do you offer refunds?</h4>
-                <p className="text-zinc-400 text-sm">
-                  We offer a 14-day money-back guarantee for all paid plans. No questions asked.
-                </p>
-              </div>
-              <div>
                 <h4 className="text-white font-medium mb-2">Is my payment information secure?</h4>
                 <p className="text-zinc-400 text-sm">
                   Absolutely. We use Stripe for secure payment processing and never store your card details.
+                </p>
+              </div>
+              <div>
+                <h4 className="text-white font-medium mb-2">How does pay-per-use billing work?</h4>
+                <p className="text-zinc-400 text-sm">
+                  With the Weekend Warrior plan, you're only charged $0.15 for each question you ask. No monthly fees or commitments.
                 </p>
               </div>
             </div>

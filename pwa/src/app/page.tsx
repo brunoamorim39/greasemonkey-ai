@@ -456,6 +456,26 @@ function MainApp({ user }: MainAppProps) {
     }
   }, [user.id]);
 
+  // Handle return from Stripe checkout
+  useEffect(() => {
+    const handleCheckoutReturn = async () => {
+      const urlParams = new URLSearchParams(window.location.search)
+      const sessionId = urlParams.get('session_id')
+
+      if (sessionId) {
+        console.log('🎉 Returned from Stripe checkout with session:', sessionId)
+        // Close any open modals
+        setShowPricing(false)
+        // Refresh user stats to reflect new subscription
+        await loadUserStats()
+        // Clean up URL
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    }
+
+    handleCheckoutReturn()
+  }, [loadUserStats])
+
   // Keep localStorage as a local cache for performance
   const saveConversationHistory = useCallback((history: ConversationMessage[], vehicleIdToSave?: string | null, userIdToSave?: string | null) => {
     const effectiveUserId = userIdToSave || user.id;
@@ -694,9 +714,11 @@ function MainApp({ user }: MainAppProps) {
   }
 
   const handleSelectPlan = (planId: string, billingType: 'monthly' | 'yearly') => {
-    // This would integrate with Stripe or your payment processor
+    // This is called after successful plan selection/checkout
     console.log(`User selected plan: ${planId} (${billingType})`)
-    // For now, just close the pricing modal
+    // Reload user stats to reflect the new plan
+    loadUserStats()
+    // Close the pricing modal
     setShowPricing(false)
   }
 
@@ -1456,7 +1478,7 @@ function MainApp({ user }: MainAppProps) {
               </div>
               <PricingPlans
                 currentPlan={userStats?.tier || 'free'}
-                onSelectPlan={handleSelectPlan}
+                userId={user.id}
                 showCurrentPlan={true}
               />
             </div>

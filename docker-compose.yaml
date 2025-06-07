@@ -28,6 +28,23 @@ services:
       - /app/.next/cache
     restart: unless-stopped
 
+  # Stripe CLI for webhook forwarding (development only)
+  stripe:
+    image: stripe/stripe-cli:latest
+    container_name: greasemonkey-stripe
+    env_file:
+      - ./pwa/.env
+    environment:
+      - STRIPE_DEVICE_NAME=greasemonkey-docker
+    command:
+      - listen
+      - --forward-to
+      - http://pwa:3000/api/stripe/webhook
+      - --format=JSON
+    depends_on:
+      - pwa
+    restart: unless-stopped
+
   # PWA Production service (for testing production builds)
   pwa-prod:
     build:
