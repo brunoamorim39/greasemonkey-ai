@@ -28,7 +28,7 @@ import {
   MicOff
 } from 'lucide-react'
 import { UsageStats } from '@/lib/supabase/types'
-import { getCurrentUser } from '@/lib/supabase'
+import { getCurrentUser, supabase } from '@/lib/supabase'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 
 // AppSettings interface for MainApp's local state of general settings
@@ -190,85 +190,25 @@ function MainApp({ user }: MainAppProps) {
       trackedCombinations: processedCombinationsRef.current.size
     })
 
-    try {
-      const key = `greasemonkey-conversation-history-${effectiveUserId}${targetVehicleId ? `-${targetVehicleId}` : '-general'}`;
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        const parsed = JSON.parse(saved);
+        try {
+      // Load conversation history from Supabase
+      const supabaseHistory = await loadConversationsFromSupabase(targetVehicleId);
 
-        // Deduplicate conversation history on load - be more aggressive
-        const deduplicatedHistory: ConversationMessage[] = [];
-        const seenCombinations = new Set<string>();
-        const seenQuestions = new Set<string>(); // Also dedupe by question alone
+      console.log('✅ Loaded conversation history from Supabase:', {
+        count: supabaseHistory.length,
+        vehicleId: targetVehicleId
+      });
 
-        console.log('🧹 Deduplicating loaded history:', { originalCount: parsed.length })
+      setConversationHistory(supabaseHistory);
 
-        for (const msg of parsed) {
-          const combination = `${msg.question.trim()}|||${msg.answer.trim()}`;
-          const questionOnly = msg.question.trim().toLowerCase();
-
-          // Skip if we've seen this exact combination OR this exact question
-          if (seenCombinations.has(combination) || seenQuestions.has(questionOnly)) {
-            console.log('🗑️ Skipping duplicate:', { question: msg.question.substring(0, 50) })
-            continue;
-          }
-
-          seenCombinations.add(combination);
-          seenQuestions.add(questionOnly);
-          deduplicatedHistory.push({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          });
-        }
-
-        console.log('✨ Deduplication complete:', {
-          original: parsed.length,
-          deduplicated: deduplicatedHistory.length,
-          removed: parsed.length - deduplicatedHistory.length
-        })
-
-                // Only update if the loaded history is actually different from current
-        const currentCombinations = conversationHistory.map(msg =>
-          `${msg.question.trim()}|||${msg.answer.trim()}`
-        );
-        const loadedCombinations = deduplicatedHistory.map(msg =>
-          `${msg.question.trim()}|||${msg.answer.trim()}`
-        );
-
-        const hasNewContent = loadedCombinations.some(combo => !currentCombinations.includes(combo)) ||
-                             currentCombinations.some(combo => !loadedCombinations.includes(combo));
-
-        if (!hasNewContent && conversationHistory.length > 0) {
-          console.log('Skipping conversation history load - no new content detected')
-          return;
-        }
-
-        console.log('Loading conversation history:', {
-          current: conversationHistory.length,
-          loaded: deduplicatedHistory.length,
-          hasNewContent
-        })
-
-        setConversationHistory(deduplicatedHistory);
-
-        // Update ref tracking with loaded combinations
-        processedCombinationsRef.current.clear();
-        deduplicatedHistory.forEach(msg => {
-          const combination = `${msg.question.trim()}|||${msg.answer.trim()}`;
-          processedCombinationsRef.current.add(combination);
-        });
-
-        // Save the cleaned history back to localStorage
-        if (deduplicatedHistory.length !== parsed.length) {
-          console.log(`Removed ${parsed.length - deduplicatedHistory.length} duplicate messages from history`);
-          localStorage.setItem(key, JSON.stringify(deduplicatedHistory));
-        }
-      } else {
-        setConversationHistory([]);
-        processedCombinationsRef.current.clear();
-      }
+      // Update ref tracking with loaded combinations
+      processedCombinationsRef.current.clear();
+      supabaseHistory.forEach(msg => {
+        const combination = `${msg.question.trim()}|||${msg.answer.trim()}`;
+        processedCombinationsRef.current.add(combination);
+      });
     } catch (error) {
-      console.error('Error loading conversation history from localStorage:', error);
+      console.error('Error loading conversation history from Supabase:', error);
       setConversationHistory([]);
     }
   }, [selectedVehicle?.id]);
@@ -456,10 +396,7 @@ function MainApp({ user }: MainAppProps) {
       currentHistoryLength: conversationHistory.length
     })
 
-    // TEMPORARILY DISABLED to debug duplicates
-    // loadConversationHistory(selectedVehicle?.id || null, user.id)
-
-    console.log('⚠️ Conversation history loading DISABLED for debugging')
+    loadConversationHistory(selectedVehicle?.id || null, user.id)
   }, [selectedVehicle?.id, loadConversationHistory])
 
   // Load selected vehicle when userStats changes
@@ -519,6 +456,7 @@ function MainApp({ user }: MainAppProps) {
     }
   }, [user.id]);
 
+  // Keep localStorage as a local cache for performance
   const saveConversationHistory = useCallback((history: ConversationMessage[], vehicleIdToSave?: string | null, userIdToSave?: string | null) => {
     const effectiveUserId = userIdToSave || user.id;
     if (!effectiveUserId) return;
@@ -528,9 +466,72 @@ function MainApp({ user }: MainAppProps) {
       const key = `greasemonkey-conversation-history-${effectiveUserId}${targetVehicleId ? `-${targetVehicleId}` : '-general'}`;
       localStorage.setItem(key, JSON.stringify(history));
     } catch (error) {
-      console.error('Error saving conversation history to localStorage:', error);
+      console.error('Error saving conversation history to localStorage cache:', error);
     }
   }, [selectedVehicle?.id]);
+
+  // New function to save individual conversation to Supabase
+  const saveConversationToSupabase = useCallback(async (question: string, answer: string, audioUrl?: string, vehicleId?: string) => {
+    try {
+      const { error } = await supabase
+        .from('conversations')
+        .insert({
+          user_id: user.id,
+          vehicle_id: vehicleId || null,
+          question,
+          answer,
+          audio_url: audioUrl || null,
+        });
+
+      if (error) {
+        console.error('Error saving conversation to Supabase:', error);
+      } else {
+        console.log('✅ Conversation saved to Supabase');
+      }
+    } catch (error) {
+      console.error('Error saving conversation to Supabase:', error);
+    }
+  }, [user.id]);
+
+  // New function to load conversations from Supabase
+  const loadConversationsFromSupabase = useCallback(async (vehicleId?: string | null) => {
+    try {
+      let query = supabase
+        .from('conversations')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (vehicleId) {
+        query = query.eq('vehicle_id', vehicleId);
+      } else {
+        query = query.is('vehicle_id', null);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error loading conversations from Supabase:', error);
+        return [];
+      }
+
+      return data?.map((conv: any) => ({
+        id: conv.id,
+        question: conv.question,
+        answer: conv.answer,
+        audioUrl: conv.audio_url,
+        timestamp: new Date(conv.created_at),
+        vehicleId: conv.vehicle_id,
+        vehicleContext: conv.vehicle_id ? 'Vehicle Context' : undefined // Will be set properly when loading vehicle history
+      })) || [];
+    } catch (error) {
+      console.error('Error loading conversations from Supabase:', error);
+      return [];
+    }
+  }, [user.id]);
+
+
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
@@ -581,6 +582,9 @@ function MainApp({ user }: MainAppProps) {
       vehicleContext: selectedVehicle ? getSelectedVehicleDisplayName() : undefined
     }
 
+    // Save to Supabase asynchronously (don't block UI)
+    saveConversationToSupabase(question, answer, audioUrl, selectedVehicle?.id)
+
     // Use functional update to ensure we have the latest state
     setConversationHistory(prevHistory => {
       // Double-check for duplicates with the latest state
@@ -606,7 +610,24 @@ function MainApp({ user }: MainAppProps) {
   const clearConversationHistory = async () => {
     setConversationHistory([])
     processedCombinationsRef.current.clear()
-    // Remove both general and vehicle-specific conversation histories for this user
+
+        // Clear from Supabase (primary storage)
+    try {
+      const { error } = await supabase
+        .from('conversations')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error clearing conversations from Supabase:', error);
+      } else {
+        console.log('✅ Conversations cleared from Supabase');
+      }
+    } catch (error) {
+      console.error('Error clearing conversations from Supabase:', error);
+    }
+
+    // Also clear localStorage cache
     const userId = user.id
     localStorage.removeItem(`greasemonkey-conversation-history-${userId}-general`)
     for (let i = 0; i < localStorage.length; i++) {
