@@ -50,7 +50,7 @@ export const config = {
 
   // Enhanced AI Features
   ai: {
-    useMultiAnswerEvaluation: process.env.USE_MULTI_ANSWER_EVALUATION !== 'false', // Default enabled
+    useMultiAnswerEvaluation: process.env.USE_MULTI_ANSWER_EVALUATION === 'true', // Default disabled for performance
     evaluationIterations: parseInt(process.env.AI_EVALUATION_ITERATIONS || '3'),
     enableEnhancedSearch: process.env.ENABLE_ENHANCED_SEARCH !== 'false', // Default enabled
   }

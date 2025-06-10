@@ -190,29 +190,72 @@ async function askHandler(request: NextRequest & { userId: string }) {
       console.log('🚀 Starting enhanced GPT evaluation process')
 
       const evaluatedAnswer = await gptService.getEvaluatedAnswer(
-        systemPrompt,
         question,
-        documentContext,
-        config.ai.evaluationIterations
+        searchResults?.map(r => r.content).join('\n\n') || '',
+        {
+          make: selectedVehicle?.make || '',
+          model: selectedVehicle?.model || '',
+          year: selectedVehicle?.year || 0
+        }
       )
 
-      response = evaluatedAnswer.answer
+      response = evaluatedAnswer.bestAnswer
       evaluationData = {
         confidence: evaluatedAnswer.confidence,
-        consistencyScore: evaluatedAnswer.consistency_score,
-        usedDocuments: evaluatedAnswer.used_documents,
-        accuracyIndicators: evaluatedAnswer.accuracy_indicators.length,
-        evaluationNotes: evaluatedAnswer.evaluation_notes
+        consistencyScore: evaluatedAnswer.consistency,
+        usedDocuments: evaluatedAnswer.allResponses.some(r => r.sources_referenced),
+        accuracyIndicators: evaluatedAnswer.accuracy,
+        evaluationNotes: evaluatedAnswer.reasoning
       }
 
       // Enhanced GPT evaluation complete
     } else {
-      // Standard single-shot GPT response
+      // Standard single-shot GPT response with token truncation
+
+      // Apply same token limits as multi-answer evaluation
+      function estimateTokens(text: string): number {
+        return Math.ceil(text.length / 4);
+      }
+
+      function truncateText(text: string, maxTokens: number): string {
+        const maxChars = maxTokens * 4;
+        if (text.length <= maxChars) return text;
+
+        const truncated = text.substring(0, maxChars);
+        const lastSentence = truncated.lastIndexOf('.');
+
+        if (lastSentence > maxChars * 0.8) {
+          return truncated.substring(0, lastSentence + 1) + '\n\n[Text truncated for length...]';
+        }
+
+        return truncated + '\n\n[Text truncated for length...]';
+      }
+
+            // Truncate search results to stay under rate limits
+      const searchResultsText = searchResults?.map(r => r.content).join('\n\n') || '';
+      const reservedTokens = 4700;
+      const maxSearchTokens = 25000 - reservedTokens;
+      const truncatedSearchResults = truncateText(searchResultsText, maxSearchTokens);
+
+      console.log(`📊 Single-shot truncation: original=${estimateTokens(searchResultsText)} tokens, truncated=${estimateTokens(truncatedSearchResults)} tokens`);
+
+      // Build a clean system prompt WITHOUT the original documentContext to avoid duplication
+      const cleanSystemPrompt = basePrompt + '\n\n' + unitInstructions + vehicleContext;
+
+      // Add ONLY the truncated search results
+      const enhancedSystemPrompt = cleanSystemPrompt + (truncatedSearchResults ? `
+
+AVAILABLE DOCUMENTATION:
+${truncatedSearchResults}
+
+CRITICAL: Use the above documentation if relevant to the question. If the information is found in the documents, cite it clearly.` : '');
+
+      console.log(`🎯 Final system prompt tokens: ${estimateTokens(enhancedSystemPrompt)}`);
 
       const completion = await openai.chat.completions.create({
         model: config.openai.model,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: enhancedSystemPrompt },
           { role: 'user', content: question }
         ],
         max_tokens: config.openai.maxTokens,

@@ -241,32 +241,53 @@ export function MainApp({ user, activeTab }: MainAppProps) {
         }))
       });
 
-      // Check for actual duplicates
+            // Check for actual duplicates and auto-remove them
       const duplicates = supabaseHistory.filter((msg, index) =>
         supabaseHistory.findIndex(other =>
           other.question === msg.question && other.answer === msg.answer
         ) !== index
       );
 
+      let cleanedHistory = supabaseHistory;
+
       if (duplicates.length > 0) {
-        console.error('🚨 DUPLICATES FOUND IN DATABASE:', duplicates);
+        console.warn('🚨 DUPLICATES FOUND IN DATABASE - Auto-removing:', duplicates);
+
+        // Remove duplicates from database
+        try {
+          const duplicateIds = duplicates.map(d => d.id);
+          const { error: deleteError } = await supabase
+            .from('conversations')
+            .delete()
+            .in('id', duplicateIds);
+
+          if (deleteError) {
+            console.error('❌ Failed to remove duplicates:', deleteError);
+          } else {
+            console.log('✅ Successfully removed', duplicateIds.length, 'duplicate conversations');
+            // Filter out the duplicates from current session
+            cleanedHistory = supabaseHistory.filter(msg => !duplicateIds.includes(msg.id));
+          }
+        } catch (error) {
+          console.error('❌ Error removing duplicates:', error);
+        }
       }
 
-      supabaseHistory.forEach(msg => {
+      cleanedHistory.forEach(msg => {
         const combinationKey = `${msg.question}-${msg.answer}`;
         processedCombinationsRef.current.add(combinationKey);
       });
 
       // Set combined history with deduplication by ID
-      const uniqueMessages = supabaseHistory.filter((msg, index, arr) =>
+      const uniqueMessages = cleanedHistory.filter((msg, index, arr) =>
         arr.findIndex(other => other.id === msg.id) === index
       );
 
-      if (uniqueMessages.length !== supabaseHistory.length) {
+      if (uniqueMessages.length !== cleanedHistory.length) {
         console.warn('🚨 Removed duplicate messages from initial load:', {
-          original: supabaseHistory.length,
+          original: cleanedHistory.length,
           unique: uniqueMessages.length,
-          duplicatesRemoved: supabaseHistory.length - uniqueMessages.length
+          duplicatesRemoved: cleanedHistory.length - uniqueMessages.length
         });
       }
 
