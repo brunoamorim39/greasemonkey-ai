@@ -121,10 +121,10 @@ export function MainApp({ user, activeTab }: MainAppProps) {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
 
   // Pagination state for chat messages
-  const [messagesPerPage] = useState(20)
-  const [currentPage, setCurrentPage] = useState(0)
+  const [messagesPerPage] = useState(10)
   const [hasMoreMessages, setHasMoreMessages] = useState(false)
   const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false)
+  const [totalMessagesCount, setTotalMessagesCount] = useState(0)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const lastProcessedQuestionRef = useRef<string>('')
@@ -151,6 +151,9 @@ export function MainApp({ user, activeTab }: MainAppProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   const [lastQuestionTime, setLastQuestionTime] = useState<number | null>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [debouncedSelectedVehicle, setDebouncedSelectedVehicle] = useState(selectedVehicle);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
 
   // Helper functions for vehicle URL management (keep vehicle params, remove tab params)
   const getVehicleFromUrl = (): string | null => {
@@ -186,6 +189,12 @@ export function MainApp({ user, activeTab }: MainAppProps) {
     if (!effectiveUserId) return;
     const targetVehicleId = vehicleIdToLoad !== undefined ? vehicleIdToLoad : selectedVehicle?.id;
 
+    // Prevent concurrent conversation loads
+    if (isLoadingConversations) {
+      console.log('⏸️ Skipping conversation history load - already loading');
+      return;
+    }
+
     // Skip loading if we're currently processing a question to avoid race conditions
     if (isProcessing) {
       console.log('⏸️ Skipping conversation history load - currently processing question');
@@ -198,14 +207,21 @@ export function MainApp({ user, activeTab }: MainAppProps) {
       trackedCombinations: processedCombinationsRef.current.size
     })
 
+    setIsLoadingConversations(true);
     try {
       // Load conversation history from Supabase
-      const supabaseHistory = await loadConversationsFromSupabase(targetVehicleId);
+      const supabaseResult = await loadConversationsFromSupabase(targetVehicleId);
+      const supabaseHistory = supabaseResult.messages;
 
       console.log('✅ Loaded conversation history from Supabase:', {
         count: supabaseHistory.length,
+        totalCount: supabaseResult.totalCount,
         vehicleId: targetVehicleId
       });
+
+      // Update pagination state
+      setTotalMessagesCount(supabaseResult.totalCount);
+      setHasMoreMessages(supabaseHistory.length < supabaseResult.totalCount);
 
       // Clear existing processed combinations and rebuild from loaded messages
       processedCombinationsRef.current.clear();
@@ -241,13 +257,27 @@ export function MainApp({ user, activeTab }: MainAppProps) {
         processedCombinationsRef.current.add(combinationKey);
       });
 
-      // Set combined history
-      setConversationHistory(supabaseHistory);
+      // Set combined history with deduplication by ID
+      const uniqueMessages = supabaseHistory.filter((msg, index, arr) =>
+        arr.findIndex(other => other.id === msg.id) === index
+      );
+
+      if (uniqueMessages.length !== supabaseHistory.length) {
+        console.warn('🚨 Removed duplicate messages from initial load:', {
+          original: supabaseHistory.length,
+          unique: uniqueMessages.length,
+          duplicatesRemoved: supabaseHistory.length - uniqueMessages.length
+        });
+      }
+
+      setConversationHistory(uniqueMessages);
 
     } catch (error) {
       console.error('❌ Error loading conversation history:', error);
+    } finally {
+      setIsLoadingConversations(false);
     }
-  }, [user.id, isProcessing]); // Add isProcessing dependency
+  }, [user.id, isProcessing, isLoadingConversations]); // Add isLoadingConversations dependency
 
   // Load selected vehicle from localStorage
   const loadSelectedVehicle = useCallback(() => {
@@ -295,14 +325,14 @@ export function MainApp({ user, activeTab }: MainAppProps) {
         setAppSettings(settingsToApply);
         localStorage.setItem(`greasemonkey-settings-${user.id}`, JSON.stringify(settingsToApply));
 
-        // Load conversation history - either for selected vehicle or general
-        await loadConversationHistory(selectedVehicle?.id || null, user.id);
-
-        // Load user stats (vehicles, documents, tier info)
+        // Load user stats FIRST (to get vehicles)
         await loadUserStats();
 
         // Load inactive vehicles
         await loadInactiveVehicles();
+
+        // Note: Conversation loading will be handled by the vehicle selection effect
+        console.log('⏭️ Skipping initial conversation load - will load after vehicle selection');
 
       } catch (error) {
         console.error("Error during initial app data loading:", error);
@@ -434,15 +464,46 @@ export function MainApp({ user, activeTab }: MainAppProps) {
     }
   }, [blobUrls.length])
 
-  // Load conversation history when selected vehicle changes
+  // Debounce vehicle selection to prevent rapid-fire calls
   useEffect(() => {
-    console.log('🚗 Vehicle changed effect triggered:', {
-      vehicleId: selectedVehicle?.id,
-      currentHistoryLength: conversationHistory.length
-    })
+    const timer = setTimeout(() => {
+      setDebouncedSelectedVehicle(selectedVehicle)
+    }, 150) // Reduced debounce time for faster response
 
-    loadConversationHistory(selectedVehicle?.id || null, user.id)
-  }, [selectedVehicle?.id]) // Remove loadConversationHistory dependency to prevent loops
+    return () => clearTimeout(timer)
+  }, [selectedVehicle])
+
+  // Load conversation history when debounced vehicle changes
+  useEffect(() => {
+    // Skip if app is still loading or if we're currently processing
+    if (isLoading || isProcessing) {
+      console.log('⏸️ Skipping conversation load - app loading or processing');
+      return;
+    }
+
+    // Skip if userStats haven't loaded yet (vehicles not available)
+    if (!userStats) {
+      console.log('⏸️ Skipping conversation load - userStats not loaded yet');
+      return;
+    }
+
+    // Skip if this is the initial undefined state during app load (but allow null)
+    if (debouncedSelectedVehicle === undefined && userStats?.vehicles?.vehicles?.length > 0) {
+      console.log('⏸️ Skipping conversation load - vehicle selection still pending');
+      return;
+    }
+
+    console.log('🚗 Debounced vehicle changed effect triggered:', {
+      vehicleId: debouncedSelectedVehicle?.id || 'null',
+      currentHistoryLength: conversationHistory.length,
+      isLoading,
+      isProcessing,
+      vehicleState: debouncedSelectedVehicle === undefined ? 'undefined' : debouncedSelectedVehicle === null ? 'null' : 'set'
+    });
+
+    // Load conversations for the selected vehicle (or null if no vehicle)
+    loadConversationHistory(debouncedSelectedVehicle?.id || null, user.id);
+  }, [debouncedSelectedVehicle, isLoading, isProcessing, userStats]) // Watch entire debouncedSelectedVehicle object, not just ID
 
   // Load selected vehicle when userStats changes
   useEffect(() => {
@@ -452,33 +513,30 @@ export function MainApp({ user, activeTab }: MainAppProps) {
       if (vehicleIdFromUrl) {
         const vehicleFromUrl = userStats.vehicles.vehicles.find(v => v.id === vehicleIdFromUrl);
         if (vehicleFromUrl) {
+          console.log('🚗 Setting vehicle from URL:', vehicleFromUrl.displayName);
           setSelectedVehicle(vehicleFromUrl);
+          setDebouncedSelectedVehicle(vehicleFromUrl); // Initialize debounced state immediately
           saveSelectedVehicle(vehicleFromUrl);
           return;
         }
       }
 
       // If no URL parameter or vehicle not found, try localStorage
-      loadSelectedVehicle();
+      const loadedVehicle = loadSelectedVehicle();
+      if (loadedVehicle) {
+        console.log('🚗 Setting vehicle from localStorage:', loadedVehicle.displayName);
+        setDebouncedSelectedVehicle(loadedVehicle); // Initialize debounced state immediately
+      } else {
+        console.log('🚗 No stored vehicle found, user will need to select one');
+        setDebouncedSelectedVehicle(null); // Set to null instead of undefined
+      }
     }
   }, [userStats?.vehicles?.vehicles, selectedVehicle, loadSelectedVehicle])
 
-  // Reset pagination when selected vehicle changes
-  useEffect(() => {
-    setCurrentPage(0)
-    const vehicleHistory = getVehicleConversationHistory()
-    setHasMoreMessages(vehicleHistory.length > messagesPerPage)
-  }, [selectedVehicle?.id, conversationHistory.length])
-
-  // Update hasMoreMessages when conversation history changes
-  useEffect(() => {
-    const vehicleHistory = getVehicleConversationHistory()
-    const totalDisplayed = (currentPage + 1) * messagesPerPage
-    setHasMoreMessages(vehicleHistory.length > totalDisplayed)
-  }, [conversationHistory, currentPage, selectedVehicle?.id])
-
   const loadUserStats = useCallback(async () => {
-    if (!user.id) return;
+    if (!user.id || isLoadingStats) return; // Prevent concurrent calls
+
+    setIsLoadingStats(true);
     try {
       console.log('Loading user stats for user:', user.id);
       const response = await apiGet('/api/user/stats');
@@ -493,8 +551,10 @@ export function MainApp({ user, activeTab }: MainAppProps) {
     } catch (error) {
       console.error('Failed to load user stats:', error);
       setUserStats(null);
+    } finally {
+      setIsLoadingStats(false);
     }
-  }, [user.id]);
+  }, [user.id, isLoadingStats]);
 
   const handleCheckoutReturn = async () => {
     try {
@@ -523,14 +583,29 @@ export function MainApp({ user, activeTab }: MainAppProps) {
   }, []);
 
   // New function to load conversations from Supabase
-  const loadConversationsFromSupabase = useCallback(async (vehicleId?: string | null) => {
+  const loadConversationsFromSupabase = useCallback(async (vehicleId?: string | null, offset = 0, limit = 10) => {
     try {
+      // First get total count for this vehicle/user combination
+      let countQuery = supabase
+        .from('conversations')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      if (vehicleId) {
+        countQuery = countQuery.eq('vehicle_id', vehicleId);
+      } else {
+        countQuery = countQuery.is('vehicle_id', null);
+      }
+
+      const { count: totalCount } = await countQuery;
+
+      // Then get the actual messages with pagination
       let query = supabase
         .from('conversations')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .range(offset, offset + limit - 1);
 
       if (vehicleId) {
         query = query.eq('vehicle_id', vehicleId);
@@ -542,21 +617,23 @@ export function MainApp({ user, activeTab }: MainAppProps) {
 
       if (error) {
         console.error('Error loading conversations from Supabase:', error);
-        return [];
+        return { messages: [], totalCount: 0 };
       }
 
-      return data?.map((conv: any) => ({
+      const messages = data?.map((conv: any) => ({
         id: conv.id,
         question: conv.question,
         answer: conv.answer,
         audioUrl: conv.audio_url,
         timestamp: new Date(conv.created_at),
         vehicleId: conv.vehicle_id,
-        vehicleContext: conv.vehicle_id ? 'Vehicle Context' : undefined // Will be set properly when loading vehicle history
+        vehicleContext: conv.vehicle_id ? 'Vehicle Context' : undefined
       })) || [];
+
+      return { messages, totalCount: totalCount || 0 };
     } catch (error) {
       console.error('Error loading conversations from Supabase:', error);
-      return [];
+      return { messages: [], totalCount: 0 };
     }
   }, [user.id]);
 
@@ -642,12 +719,28 @@ export function MainApp({ user, activeTab }: MainAppProps) {
     setAudioGenerationError(null);
 
     try {
+      // Prepare vehicles data for garage detection (pass from frontend to avoid API reload)
+      const vehiclesForGarageDetection = userStats?.vehicles?.vehicles?.map(v => ({
+        id: v.id,
+        make: v.make,
+        model: v.model,
+        year: v.year,
+        nickname: v.nickname,
+        trim: v.trim,
+        engine: v.engine,
+        notes: v.notes
+      })) || [];
+
       const requestPayload = {
         question: questionText,
         vehicleId: selectedVehicle?.id || null,
+        vehicles: vehiclesForGarageDetection, // Pass vehicles to avoid API reload
       };
 
-      console.log('Sending question:', requestPayload);
+      console.log('Sending question with vehicles data:', {
+        ...requestPayload,
+        vehiclesCount: vehiclesForGarageDetection.length
+      });
 
       const response = await apiPost('/api/ask', requestPayload);
 
@@ -667,22 +760,7 @@ export function MainApp({ user, activeTab }: MainAppProps) {
       // await handleAudioGeneration(data.answer, data.audioUrl);
 
       // Reload conversation history from database after backend saves it
-      console.log('📝 About to schedule conversation reload in setTimeout');
-      setTimeout(() => {
-        console.log('🔄 Reloading conversation history after question response');
-        console.log('Current state before reload:', {
-          isProcessing,
-          conversationHistoryLength: conversationHistory.length,
-          selectedVehicleId: selectedVehicle?.id
-        });
-        try {
-          loadConversationHistory(selectedVehicle?.id || null, user.id);
-          console.log('✅ Conversation reload completed successfully');
-        } catch (error) {
-          console.error('❌ Error during conversation reload:', error);
-        }
-      }, 500);
-
+      // Note: Skip setTimeout reload since vehicle effect will handle it after loadUserStats
       await loadUserStats();
 
     } catch (error: any) {
@@ -1060,25 +1138,65 @@ export function MainApp({ user, activeTab }: MainAppProps) {
     return `${selectedVehicle.year} ${selectedVehicle.make} ${selectedVehicle.model}`;
   };
 
-  const getVehicleConversationHistory = () => {
+  const getVehicleConversationHistory = useCallback(() => {
+    const vehicleId = selectedVehicle?.id || null;
     return conversationHistory.filter(msg =>
-      selectedVehicle?.id ? msg.vehicleId === selectedVehicle.id : !msg.vehicleId
+      (vehicleId && msg.vehicleId === vehicleId) ||
+      (!vehicleId && !msg.vehicleId)
     );
-  };
-
-  const getPaginatedMessages = (): ConversationMessage[] => {
-    const vehicleHistory = getVehicleConversationHistory();
-    const startIndex = 0;
-    const endIndex = (currentPage + 1) * messagesPerPage;
-    return vehicleHistory.slice(startIndex, endIndex);
-  };
+  }, [conversationHistory, selectedVehicle?.id]);
 
   const loadMoreMessages = async () => {
     if (isLoadingMoreMessages || !hasMoreMessages) return;
 
     setIsLoadingMoreMessages(true);
     try {
-      setCurrentPage(prev => prev + 1);
+      const nextOffset = conversationHistory.length;
+      const targetVehicleId = selectedVehicle?.id;
+
+      console.log('Loading more messages:', {
+        nextOffset,
+        messagesPerPage,
+        targetVehicleId,
+        currentHistoryLength: conversationHistory.length,
+        totalMessagesCount
+      });
+
+      const result = await loadConversationsFromSupabase(targetVehicleId, nextOffset, messagesPerPage);
+      const newMessages = result.messages;
+
+      if (newMessages.length > 0) {
+        // Append new messages to existing conversation history with deduplication
+        setConversationHistory(prev => {
+          const existingIds = new Set(prev.map(msg => msg.id));
+          const uniqueNewMessages = newMessages.filter(msg => !existingIds.has(msg.id));
+
+          console.log('📝 Deduplication check:', {
+            existingCount: prev.length,
+            newMessagesCount: newMessages.length,
+            uniqueNewMessagesCount: uniqueNewMessages.length,
+            duplicatesFiltered: newMessages.length - uniqueNewMessages.length
+          });
+
+          const updatedHistory = [...prev, ...uniqueNewMessages];
+
+          // Update hasMoreMessages based on the actual total after deduplication
+          setHasMoreMessages(updatedHistory.length < result.totalCount);
+
+          console.log('✅ Loaded more messages:', {
+            newMessagesCount: uniqueNewMessages.length,
+            totalLoadedNow: updatedHistory.length,
+            totalAvailable: result.totalCount,
+            hasMore: updatedHistory.length < result.totalCount
+          });
+
+          return updatedHistory;
+        });
+      } else {
+        setHasMoreMessages(false);
+      }
+    } catch (error) {
+      console.error('Error loading more messages:', error);
     } finally {
       setIsLoadingMoreMessages(false);
     }
@@ -1207,6 +1325,9 @@ export function MainApp({ user, activeTab }: MainAppProps) {
         isVoiceInputGloballyEnabled={appSettings.voice_enabled}
         isAutoplayEnabled={appSettings.auto_play}
         onToggleAutoplay={handleToggleAutoplay}
+        hasMoreMessages={hasMoreMessages}
+        isLoadingMoreMessages={isLoadingMoreMessages}
+        onLoadMoreMessages={loadMoreMessages}
       />
     );
   } else if (activeTab === 'garage') {

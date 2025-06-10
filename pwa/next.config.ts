@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
   // Disable React strict mode to prevent hydration issues with browser extensions
   reactStrictMode: false,
 
+  // Experimental optimizations to reduce compilation
+  experimental: {
+    optimizePackageImports: ['lucide-react'],
+  },
+
   // Disable ESLint during build
   eslint: {
     ignoreDuringBuilds: true,
@@ -45,7 +50,7 @@ const nextConfig: NextConfig = {
     return config
   },
 
-  // Development optimizations for hot reload
+  // Development optimizations for hot reload and compilation
   ...(process.env.NODE_ENV === 'development' && {
     // Disable caching issues that prevent hot reload
     onDemandEntries: {

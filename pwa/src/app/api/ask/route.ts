@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/auth'
 import { userService } from '@/lib/services/user-service'
 import { vehicleService } from '@/lib/services/vehicle-service'
 import { documentService } from '@/lib/services/document-service'
+import { gptService } from '@/lib/services/gpt-service'
 import { buildSystemPrompt, detectVehicleInfo, detectVehicleFromGarage, isOffTopic, isUnclearMessage, UserVehicle } from '@/lib/prompts'
 import { createClient } from '@supabase/supabase-js'
 
@@ -42,7 +43,7 @@ async function askHandler(request: NextRequest & { userId: string }) {
   const startTime = Date.now()
 
   try {
-    const { question, vehicleId, includeDocuments = true } = await request.json()
+    const { question, vehicleId, includeDocuments = true, vehicles } = await request.json()
 
     if (!question?.trim()) {
       return NextResponse.json({ error: 'Question is required' }, { status: 400 })
@@ -69,8 +70,15 @@ async function askHandler(request: NextRequest & { userId: string }) {
     // Build unit instructions
     const unitInstructions = createUnitInstructions(preferences)
 
-    // Get user's vehicles for garage detection
-    const userVehicles = await vehicleService.getUserVehicles(userId)
+    // Get user's vehicles for garage detection - use provided vehicles or load from DB
+    let userVehicles
+    if (vehicles && Array.isArray(vehicles) && vehicles.length > 0) {
+      console.log('🚗 Using vehicles provided by frontend (avoiding DB call):', vehicles.length)
+      userVehicles = vehicles
+    } else {
+      userVehicles = await vehicleService.getUserVehicles(userId)
+    }
+
     const userVehiclesForMatching: UserVehicle[] = userVehicles.map(v => ({
       id: v.id,
       make: v.make,
@@ -124,9 +132,13 @@ async function askHandler(request: NextRequest & { userId: string }) {
     let documentContext = ''
     let searchResults: SearchResult[] = []
     if (includeDocuments) {
-      console.log('📚 Starting document search for question:', question)
 
-      searchResults = await documentService.searchDocuments(userId, {
+      // Use enhanced search if enabled, otherwise fallback to standard search
+      const searchMethod = config.ai.enableEnhancedSearch ?
+        documentService.searchDocumentsEnhanced :
+        documentService.searchDocuments
+
+      searchResults = await searchMethod.call(documentService, userId, {
         query: question,
         car_make: selectedVehicle?.make,
         car_model: selectedVehicle?.model,
@@ -134,14 +146,7 @@ async function askHandler(request: NextRequest & { userId: string }) {
         limit: 3
       })
 
-      console.log('📋 Document search completed:', {
-        searchResultsCount: searchResults.length,
-        searchResults: searchResults.map(r => ({
-          filename: r.document.original_filename,
-          contentLength: r.content.length,
-          contentPreview: r.content.substring(0, 150) + '...'
-        }))
-      })
+      // Document search completed silently
 
       if (searchResults.length > 0) {
         documentContext = '\n\nRELEVANT DOCUMENTS:\n' +
@@ -149,15 +154,8 @@ async function askHandler(request: NextRequest & { userId: string }) {
             `- ${result.document.original_filename}: ${result.content}`
           ).join('\n')
 
-        console.log('📝 Document context built:', {
-          documentContextLength: documentContext.length,
-          documentContext: documentContext.substring(0, 500) + '...'
-        })
-      } else {
-        console.log('❌ No documents found or matched for question')
+        // Document context built silently
       }
-    } else {
-      console.log('🚫 Document search disabled (includeDocuments = false)')
     }
 
     // Analyze the user's question for intelligent prompting
@@ -182,52 +180,51 @@ async function askHandler(request: NextRequest & { userId: string }) {
 
     const systemPrompt = basePrompt + '\n\n' + unitInstructions + vehicleContext + documentContext
 
-    console.log('🤖 Final system prompt composition:', {
-      basePromptLength: basePrompt.length,
-      unitInstructionsLength: unitInstructions.length,
-      vehicleContextLength: vehicleContext.length,
-      documentContextLength: documentContext.length,
-      totalSystemPromptLength: systemPrompt.length,
-      hasDocumentContext: documentContext.length > 0,
-      documentsUsed: searchResults.length
-    })
+    // System prompt built silently
 
-    if (documentContext.length > 0) {
-      console.log('📖 Document context being sent to GPT:', {
-        documentContext: documentContext.substring(0, 1000) + (documentContext.length > 1000 ? '...' : '')
+        let response: string
+    let evaluationData: any = {}
+
+    if (config.ai.useMultiAnswerEvaluation) {
+      // Use enhanced GPT evaluation system for better accuracy
+      console.log('🚀 Starting enhanced GPT evaluation process')
+
+      const evaluatedAnswer = await gptService.getEvaluatedAnswer(
+        systemPrompt,
+        question,
+        documentContext,
+        config.ai.evaluationIterations
+      )
+
+      response = evaluatedAnswer.answer
+      evaluationData = {
+        confidence: evaluatedAnswer.confidence,
+        consistencyScore: evaluatedAnswer.consistency_score,
+        usedDocuments: evaluatedAnswer.used_documents,
+        accuracyIndicators: evaluatedAnswer.accuracy_indicators.length,
+        evaluationNotes: evaluatedAnswer.evaluation_notes
+      }
+
+      // Enhanced GPT evaluation complete
+    } else {
+      // Standard single-shot GPT response
+
+      const completion = await openai.chat.completions.create({
+        model: config.openai.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: question }
+        ],
+        max_tokens: config.openai.maxTokens,
+        temperature: 0.1, // Lower temperature for more consistent results
       })
+
+      response = completion.choices[0]?.message?.content || 'I apologize, but I could not generate a response.'
+
+      // Standard GPT response received
     }
 
-    // Debug right before OpenAI call (no sensitive data)
-    console.log('🚀 About to call OpenAI with:', {
-      hasClient: !!openai,
-      hasApiKey: !!openai.apiKey,
-      model: config.openai.model,
-      systemPromptLength: systemPrompt.length,
-      questionLength: question.length
-    })
-
-    // Call GPT-4
-    const completion = await openai.chat.completions.create({
-      model: config.openai.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: question }
-      ],
-      max_tokens: config.openai.maxTokens,
-      temperature: config.openai.temperature,
-    })
-
-    const response = completion.choices[0]?.message?.content || 'I apologize, but I could not generate a response.'
     const responseTime = Date.now() - startTime
-
-    console.log('✅ OpenAI response received:', {
-      responseLength: response.length,
-      responseTimeMs: responseTime,
-      hadDocumentContext: documentContext.length > 0,
-      documentsUsedInPrompt: searchResults.length,
-      responsePreview: response.substring(0, 200) + '...'
-    })
 
     // Track usage
     await userService.trackUsage(userId, 'ask', {
@@ -296,13 +293,6 @@ async function askHandler(request: NextRequest & { userId: string }) {
 
     // Save conversation to conversations table
     try {
-      console.log('💾 Saving conversation to database:', {
-        userId,
-        vehicleId: effectiveVehicleId || null,
-        questionLength: question.length,
-        answerLength: response.length,
-        hasAudio: !!audioUrl
-      })
 
       const { data, error: conversationError } = await supabaseAdmin
         .from('conversations')
@@ -317,11 +307,6 @@ async function askHandler(request: NextRequest & { userId: string }) {
 
       if (conversationError) {
         console.error('❌ Error saving conversation:', conversationError)
-      } else {
-        console.log('✅ Conversation saved successfully:', {
-          conversationId: data?.[0]?.id,
-          createdAt: data?.[0]?.created_at
-        })
       }
     } catch (error) {
       console.error('❌ Error in conversation save:', error)

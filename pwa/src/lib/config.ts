@@ -46,6 +46,13 @@ export const config = {
     maxQuestionLength: 500,
     maxAudioSizeBytes: 25 * 1024 * 1024, // 25MB for audio files
     maxTTSCharacters: 40000, // Flash v2.5 supports up to 40k characters
+  },
+
+  // Enhanced AI Features
+  ai: {
+    useMultiAnswerEvaluation: process.env.USE_MULTI_ANSWER_EVALUATION !== 'false', // Default enabled
+    evaluationIterations: parseInt(process.env.AI_EVALUATION_ITERATIONS || '3'),
+    enableEnhancedSearch: process.env.ENABLE_ENHANCED_SEARCH !== 'false', // Default enabled
   }
 } as const
 

@@ -122,17 +122,14 @@ export interface Database {
         Row: {
           id: string
           user_id: string
+          vehicle_id?: string
           filename: string
           original_filename: string
-          file_size: number
-          file_type: string
-          document_type: 'service_manual' | 'repair_manual' | 'owners_manual' | 'parts_catalog' | 'wiring_diagram' | 'other'
-          car_make?: string
-          car_model?: string
-          car_year?: number
-          status: 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
+          file_size_bytes: number
+          category: 'service_manual' | 'owners_manual' | 'maintenance_record' | 'other'
+          description?: string
+          status: 'uploaded' | 'processing' | 'processed' | 'error'
           storage_path: string
-          metadata: Json
           deactivated_at?: string
           deactivation_reason?: string
           created_at: string
@@ -141,17 +138,14 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
+          vehicle_id?: string
           filename: string
           original_filename: string
-          file_size: number
-          file_type: string
-          document_type: 'service_manual' | 'repair_manual' | 'owners_manual' | 'parts_catalog' | 'wiring_diagram' | 'other'
-          car_make?: string
-          car_model?: string
-          car_year?: number
-          status?: 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
+          file_size_bytes: number
+          category: 'service_manual' | 'owners_manual' | 'maintenance_record' | 'other'
+          description?: string
+          status?: 'uploaded' | 'processing' | 'processed' | 'error'
           storage_path: string
-          metadata?: Json
           deactivated_at?: string
           deactivation_reason?: string
           created_at?: string
@@ -159,8 +153,9 @@ export interface Database {
         }
         Update: {
           filename?: string
-          status?: 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
-          metadata?: Json
+          category?: 'service_manual' | 'owners_manual' | 'maintenance_record' | 'other'
+          description?: string
+          status?: 'uploaded' | 'processing' | 'processed' | 'error'
           deactivated_at?: string
           deactivation_reason?: string
           updated_at?: string
@@ -362,17 +357,14 @@ export interface Vehicle {
 export interface DocumentMetadata {
   id: string
   user_id: string
+  vehicle_id?: string
   filename: string
   original_filename: string
-  file_size: number
-  file_type: string
-  document_type: 'service_manual' | 'repair_manual' | 'owners_manual' | 'parts_catalog' | 'wiring_diagram' | 'other'
-  car_make?: string
-  car_model?: string
-  car_year?: number
-  status: 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
+  file_size_bytes: number
+  category: 'service_manual' | 'owners_manual' | 'maintenance_record' | 'other'
+  description?: string
+  status: 'uploaded' | 'processing' | 'processed' | 'error'
   storage_path: string
-  metadata: Json
   deactivated_at?: string
   deactivation_reason?: string
   created_at: string
@@ -419,8 +411,8 @@ export interface SubscriptionStatus {
 }
 
 export type UserTier = 'free_tier' | 'weekend_warrior' | 'master_tech'
-export type DocumentType = 'service_manual' | 'repair_manual' | 'owners_manual' | 'parts_catalog' | 'wiring_diagram' | 'other'
-export type DocumentStatus = 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
+export type DocumentType = 'service_manual' | 'owners_manual' | 'maintenance_record' | 'other'
+export type DocumentStatus = 'uploaded' | 'processing' | 'processed' | 'error'
 export type UsageType = 'ask' | 'document_upload' | 'audio_request'
 export type Platform = 'ios' | 'android' | 'web'
 export type SubscriptionTier = 'garage_visitor' | 'weekend_warrior' | 'master_tech'

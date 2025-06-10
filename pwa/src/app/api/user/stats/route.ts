@@ -18,7 +18,7 @@ async function getUserStatsHandler(request: NextRequest & { userId: string }) {
 
     // Get all vehicles (active and inactive) to check current state
     const allVehicles = await vehicleService.getUserVehicles(userId, true) // Include inactive
-    const activeVehicles = allVehicles.filter(v => v.is_active !== false)
+    let activeVehicles = allVehicles.filter(v => v.is_active !== false)
     const inactiveVehicles = allVehicles.filter(v => v.is_active === false && v.deactivation_reason === 'tier_downgrade')
 
     // Check if user has capacity to reactivate vehicles (UPGRADE LOGIC)
@@ -31,6 +31,10 @@ async function getUserStatsHandler(request: NextRequest & { userId: string }) {
 
         // Automatically restore access - this will reactivate vehicles up to the limit
         await downgradeService.restoreAccess(userId, tier)
+
+        // Reload vehicles after potential reactivation to get updated state
+        const updatedAllVehicles = await vehicleService.getUserVehicles(userId, true)
+        activeVehicles = updatedAllVehicles.filter(v => v.is_active !== false)
       }
     }
 
@@ -40,19 +44,21 @@ async function getUserStatsHandler(request: NextRequest & { userId: string }) {
 
       // Apply downgrade restrictions
       await downgradeService.executeDowngrade(userId, tier, { notifyUser: false })
+
+      // Reload vehicles after potential deactivation to get updated state
+      const updatedAllVehicles = await vehicleService.getUserVehicles(userId, true)
+      activeVehicles = updatedAllVehicles.filter(v => v.is_active !== false)
     }
 
-    // Get all user data in parallel
+    // Get all user data in parallel (excluding vehicles since we already have them)
     const [
       usageStats,
       userProfile,
-      vehicles, // This will now only return active vehicles
       documents,
       storageUsage,
     ] = await Promise.all([
       userService.getUsageStats(userId),
       userService.getUserProfile(userId),
-      vehicleService.getUserVehicles(userId), // Only active vehicles
       documentService.getUserDocuments(userId),
       documentService.getUserStorageUsage(userId),
     ])
@@ -62,8 +68,8 @@ async function getUserStatsHandler(request: NextRequest & { userId: string }) {
       usage: usageStats,
       full_name: userProfile?.full_name,
       vehicles: {
-        count: vehicles.length,
-        vehicles: vehicles.map(v => ({
+        count: activeVehicles.length,
+        vehicles: activeVehicles.map(v => ({
           id: v.id,
           displayName: vehicleService.formatVehicleString(v),
           make: v.make,

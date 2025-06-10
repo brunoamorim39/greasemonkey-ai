@@ -61,6 +61,11 @@ export const ChatInterface = memo(({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [micPermission, setMicPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [showPermissionHelperText, setShowPermissionHelperText] = useState(false);
+  const [isNearTop, setIsNearTop] = useState(false);
+  const prevHistoryLengthRef = useRef(0);
+  const scrollPositionRef = useRef<{ top: number; height: number } | null>(null);
+  const loadMoreThrottleRef = useRef(false);
+  const isLoadingOlderMessagesRef = useRef(false);
 
   useEffect(() => {
     if (typeof navigator !== 'undefined' && navigator.permissions) {
@@ -142,15 +147,105 @@ export const ChatInterface = memo(({
     }
   }, [])
 
-  // Scroll to bottom when conversation history changes or processing starts
+  // Handle scroll for automatic pagination
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const { scrollTop, scrollHeight } = container;
+    const nearTop = scrollTop < 100; // If within 100px of top
+
+    setIsNearTop(nearTop);
+
+    // Auto-load more messages when scrolling near top
+    if (nearTop && hasMoreMessages && !isLoadingMoreMessages && onLoadMoreMessages && !loadMoreThrottleRef.current) {
+      // Store current scroll position before loading older messages
+      scrollPositionRef.current = {
+        top: scrollTop,
+        height: scrollHeight
+      };
+
+      // Set loading flag to prevent auto-scroll during loading
+      isLoadingOlderMessagesRef.current = true;
+
+      // Throttle to prevent rapid calls
+      loadMoreThrottleRef.current = true;
+      setTimeout(() => {
+        loadMoreThrottleRef.current = false;
+      }, 1000);
+
+      onLoadMoreMessages();
+    }
+  }, [hasMoreMessages, isLoadingMoreMessages, onLoadMoreMessages]);
+
+  // Scroll to bottom when conversation changes or processing starts
   useEffect(() => {
-    scrollToBottom()
-  }, [conversationHistory, isProcessing, answer, scrollToBottom])
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const currentLength = conversationHistory.length;
+    const prevLength = prevHistoryLengthRef.current;
+
+    // If we have stored scroll position (from loading older messages), restore it
+    if (scrollPositionRef.current) {
+      const { top: prevTop, height: prevHeight } = scrollPositionRef.current;
+      const currentHeight = container.scrollHeight;
+      const heightDifference = currentHeight - prevHeight;
+
+      // Restore scroll position accounting for new content added at the top
+      const newScrollTop = prevTop + heightDifference;
+      container.scrollTop = newScrollTop;
+
+      // Only clear the stored position if we're no longer loading messages
+      if (!isLoadingMoreMessages) {
+        isLoadingOlderMessagesRef.current = false;
+        scrollPositionRef.current = null;
+      }
+    } else if (!isLoadingOlderMessagesRef.current) {
+      // Normal auto-scroll for new messages, processing, or initial load (but not while loading older messages)
+      scrollToBottom();
+    }
+
+    // Update the previous length
+    prevHistoryLengthRef.current = currentLength;
+  }, [conversationHistory, isProcessing, answer, scrollToBottom]);
+
+  // Add scroll listener for pagination
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
 
   return (
     <div className="flex flex-col h-full max-w-2xl mx-auto">
       {/* Conversation History */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-6 scrollbar-none">
+        {/* Loading indicator at top when loading more messages */}
+        {isLoadingMoreMessages && hasMoreMessages && (
+          <div className="flex justify-center py-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-zinc-800/50 border border-zinc-700/50 rounded-lg text-zinc-400 text-sm">
+              <div className="w-3 h-3 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
+              Loading older messages...
+            </div>
+          </div>
+        )}
+
+        {/* Load More Messages Button - at the TOP of conversation history */}
+        {hasMoreMessages && onLoadMoreMessages && !isLoadingMoreMessages && (
+          <div className="flex justify-center py-4">
+            <button
+              onClick={onLoadMoreMessages}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-800/50 hover:bg-zinc-700/50 border border-zinc-700/50 rounded-lg text-zinc-300 hover:text-zinc-100 transition-all"
+            >
+              <MessageSquare className="h-4 w-4" />
+              Load older messages
+            </button>
+          </div>
+        )}
+
         {/* Previous Conversations - Show in reverse chronological order */}
         {conversationHistory.slice().reverse().map((message) => (
           <div key={message.id} className="space-y-4">
@@ -201,29 +296,6 @@ export const ChatInterface = memo(({
             </div>
           </div>
         ))}
-
-        {/* Load More Messages Button */}
-        {hasMoreMessages && onLoadMoreMessages && (
-          <div className="flex justify-center py-4">
-            <button
-              onClick={onLoadMoreMessages}
-              disabled={isLoadingMoreMessages}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-800/50 hover:bg-zinc-700/50 border border-zinc-700/50 rounded-lg text-zinc-300 hover:text-zinc-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoadingMoreMessages ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
-                  Loading...
-                </>
-              ) : (
-                <>
-                  <MessageSquare className="h-4 w-4" />
-                  Load older messages
-                </>
-              )}
-            </button>
-          </div>
-        )}
 
         {/* Current Answer */}
         {answer && (

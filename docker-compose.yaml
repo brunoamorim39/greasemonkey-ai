@@ -36,7 +36,6 @@ services:
       - ./pwa/.env
     environment:
       - STRIPE_DEVICE_NAME=greasemonkey-docker
-      - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
     command:
       - listen
       - --forward-to
