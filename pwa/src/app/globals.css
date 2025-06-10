@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent hydration mismatches from browser extensions like DarkReader */
+svg[data-darkreader-inline-stroke] {
+  --darkreader-inline-stroke: currentColor !important;
+}
+
+svg[data-darkreader-inline-fill] {
+  --darkreader-inline-fill: currentColor !important;
+}
+
 :root {
   --foreground-rgb: 255, 255, 255;
   --background-start-rgb: 0, 0, 0;
@@ -36,6 +45,16 @@ html, body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(251, 146, 60, 0.7);
+}
+
+/* Hide scrollbar utilities */
+.scrollbar-none {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 /* Background patterns */

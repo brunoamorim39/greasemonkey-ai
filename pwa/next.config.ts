@@ -27,6 +27,24 @@ const nextConfig: NextConfig = {
     },
   },
 
+  // Webpack configuration for both dev and production
+  webpack: (config: any, { dev, isServer }: any) => {
+    // Fix for natural library webworker-threads issue
+    config.resolve = config.resolve || {};
+    config.resolve.fallback = config.resolve.fallback || {};
+    config.resolve.fallback['webworker-threads'] = false;
+
+    // Development-specific configuration
+    if (dev && !isServer) {
+      config.watchOptions = {
+        poll: 1000,
+        aggregateTimeout: 300,
+        ignored: /node_modules/,
+      }
+    }
+    return config
+  },
+
   // Development optimizations for hot reload
   ...(process.env.NODE_ENV === 'development' && {
     // Disable caching issues that prevent hot reload
@@ -34,20 +52,7 @@ const nextConfig: NextConfig = {
       maxInactiveAge: 25 * 1000,
       pagesBufferLength: 2,
     },
-    // Webpack configuration for non-Turbopack mode
-    webpack: (config: any, { dev, isServer }: any) => {
-      if (dev && !isServer) {
-        config.watchOptions = {
-          poll: 1000,
-          aggregateTimeout: 300,
-          ignored: /node_modules/,
-        }
-      }
-      return config
-    },
   }),
-
-
 
   // PWA configuration (conditional to avoid conflicts with Turbopack in dev)
   ...(process.env.NODE_ENV === 'production' && {

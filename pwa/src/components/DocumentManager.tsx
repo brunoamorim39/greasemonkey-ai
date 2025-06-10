@@ -37,13 +37,21 @@ interface Document {
   createdAt: string
   category?: string
   description?: string
+  vehicleId?: string
 }
 
 interface DocumentManagerProps {
   documents: Document[]
-  onUploadDocument: (file: File, category: string, description?: string) => Promise<void>
+  onUploadDocument: (file: File, category: string, description?: string, vehicleId?: string) => Promise<void>
   onDeleteDocument: (id: string) => Promise<void>
   userTier: string
+  userVehicles?: {
+    id: string
+    nickname?: string
+    make: string
+    model: string
+    year: number
+  }[]
   userStats?: {
     tier: string
     usage: {
@@ -73,7 +81,7 @@ const DOCUMENT_CATEGORIES = [
     id: 'service_manual',
     name: 'Service Manual',
     icon: Book,
-    description: 'Official service manuals and repair guides',
+    description: 'Factory and aftermarket service manuals',
     color: 'blue'
   },
   {
@@ -91,27 +99,6 @@ const DOCUMENT_CATEGORIES = [
     color: 'orange'
   },
   {
-    id: 'parts_diagram',
-    name: 'Parts Diagrams',
-    icon: Wrench,
-    description: 'Part diagrams and technical schematics',
-    color: 'purple'
-  },
-  {
-    id: 'photos',
-    name: 'Photos',
-    icon: FileImage,
-    description: 'Vehicle photos and damage documentation',
-    color: 'pink'
-  },
-  {
-    id: 'videos',
-    name: 'Videos',
-    icon: FileVideo,
-    description: 'Instructional videos and diagnostics',
-    color: 'yellow'
-  },
-  {
     id: 'other',
     name: 'Other',
     icon: FileText,
@@ -125,13 +112,16 @@ export function DocumentManager({
   onUploadDocument,
   onDeleteDocument,
   userTier,
+  userVehicles,
   userStats
 }: DocumentManagerProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('service_manual')
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
   const [uploadDescription, setUploadDescription] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [activeFilter, setActiveFilter] = useState<string>('all')
+  const [activeVehicleFilter, setActiveVehicleFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [showUploadForm, setShowUploadForm] = useState(false)
 
@@ -153,8 +143,9 @@ export function DocumentManager({
 
     setIsUploading(true)
     try {
-      await onUploadDocument(selectedFile, selectedCategory, uploadDescription)
+      await onUploadDocument(selectedFile, selectedCategory, uploadDescription, selectedVehicleId)
       setSelectedFile(null)
+      setSelectedVehicleId('')
       setUploadDescription('')
       setShowUploadForm(false)
       // Reset file input
@@ -212,17 +203,32 @@ export function DocumentManager({
 
   const filteredDocuments = documents.filter(doc => {
     const matchesFilter = activeFilter === 'all' || doc.category === activeFilter
+    const matchesVehicleFilter = activeVehicleFilter === 'all' || doc.vehicleId === activeVehicleFilter
     const matchesSearch = searchQuery === '' ||
       doc.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.description?.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesFilter && matchesSearch
+    return matchesFilter && matchesVehicleFilter && matchesSearch
   })
 
   const documentsByCategory = DOCUMENT_CATEGORIES.map(category => ({
     ...category,
-    documents: documents.filter(doc => doc.category === category.id || (category.id === 'other' && !doc.category)),
-    count: documents.filter(doc => doc.category === category.id || (category.id === 'other' && !doc.category)).length
+    documents: documents.filter(doc => {
+      const matchesCategory = doc.category === category.id || (category.id === 'other' && !doc.category)
+      const matchesVehicleFilter = activeVehicleFilter === 'all' || doc.vehicleId === activeVehicleFilter
+      return matchesCategory && matchesVehicleFilter
+    }),
+    count: documents.filter(doc => {
+      const matchesCategory = doc.category === category.id || (category.id === 'other' && !doc.category)
+      const matchesVehicleFilter = activeVehicleFilter === 'all' || doc.vehicleId === activeVehicleFilter
+      return matchesCategory && matchesVehicleFilter
+    }).length
   }))
+
+  const documentsByVehicle = userVehicles?.map(vehicle => ({
+    id: vehicle.id,
+    name: vehicle.nickname ? `${vehicle.nickname} - ${vehicle.year} ${vehicle.make} ${vehicle.model}` : `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+    count: documents.filter(doc => doc.vehicleId === vehicle.id).length
+  })) || []
 
   return (
     <div className="space-y-6">
@@ -233,7 +239,7 @@ export function DocumentManager({
             <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
               <FolderOpen className="h-5 w-5 text-white" />
             </div>
-            Document Library
+            Documents
           </h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-zinc-400 text-sm">
@@ -254,8 +260,8 @@ export function DocumentManager({
             className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
           >
             <Upload className="h-4 w-4 mr-2" />
-            Upload
-          </Button>
+              Upload
+            </Button>
         )}
       </div>
 
@@ -330,37 +336,82 @@ export function DocumentManager({
             )}
           </div>
 
-          {/* Category Filters */}
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            <button
-              onClick={() => setActiveFilter('all')}
-              className={cn(
-                "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all",
-                activeFilter === 'all'
-                  ? "bg-zinc-700 text-white"
-                  : "bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700/50"
-              )}
-            >
-              All ({documents.length})
-            </button>
-            {documentsByCategory.filter(cat => cat.count > 0).map((category) => {
-              const Icon = category.icon
-              return (
+          {/* Vehicle Filters */}
+          {userVehicles && userVehicles.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                Filter by Vehicle
+              </label>
+              <div className="flex flex-wrap gap-2">
                 <button
-                  key={category.id}
-                  onClick={() => setActiveFilter(category.id)}
+                  onClick={() => setActiveVehicleFilter('all')}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all",
-                    activeFilter === category.id
-                      ? getColorClasses(category.color).replace('bg-', 'bg-').replace('/20', '/30')
+                    "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all",
+                    activeVehicleFilter === 'all'
+                      ? "bg-orange-500/20 text-orange-300 border border-orange-500/30"
                       : "bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700/50"
                   )}
                 >
-                  <Icon className="h-4 w-4" />
-                  {category.name} ({category.count})
+                  All Vehicles ({documents.length})
                 </button>
-              )
-            })}
+                {documentsByVehicle.filter(vehicle => vehicle.count > 0).map((vehicle) => (
+                  <button
+                    key={vehicle.id}
+                    onClick={() => setActiveVehicleFilter(vehicle.id)}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all",
+                      activeVehicleFilter === vehicle.id
+                        ? "bg-orange-500/20 text-orange-300 border border-orange-500/30"
+                        : "bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700/50"
+                    )}
+                  >
+                    <Car className="h-4 w-4" />
+                    {vehicle.name} ({vehicle.count})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Document Type Filters */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              Filter by Document Type
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setActiveFilter('all')}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all",
+                  activeFilter === 'all'
+                    ? "bg-zinc-700 text-white"
+                    : "bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700/50"
+                )}
+              >
+                All ({activeVehicleFilter === 'all' ? documents.length : filteredDocuments.length})
+              </button>
+              {documentsByCategory.map((category) => {
+                const Icon = category.icon
+                return (
+                  <button
+                    key={category.id}
+                    onClick={() => setActiveFilter(category.id)}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all",
+                      activeFilter === category.id
+                        ? getColorClasses(category.color).replace('bg-', 'bg-').replace('/20', '/30')
+                        : category.count > 0
+                        ? "bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700/50"
+                        : "bg-zinc-900/30 text-zinc-600 cursor-not-allowed"
+                    )}
+                    disabled={category.count === 0}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {category.name} ({category.count})
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -372,6 +423,7 @@ export function DocumentManager({
             filteredDocuments.map((document) => {
               const categoryInfo = getCategoryInfo(document.category || 'other')
               const Icon = categoryInfo.icon
+              const associatedVehicle = userVehicles?.find(v => v.id === document.vehicleId)
 
               return (
                 <Card key={document.id} className="hover:bg-zinc-900/50 transition-colors">
@@ -385,17 +437,33 @@ export function DocumentManager({
                       {/* Document Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-white text-lg mb-1 truncate">
-                              {document.filename}
-                            </h3>
-                            <p className="text-sm text-zinc-400 mb-2">{categoryInfo.name}</p>
+                          <div className="flex-1 min-w-0 space-y-3">
+                            <div>
+                              <h3 className="font-semibold text-white text-lg mb-1 break-words">
+                                {document.filename}
+                              </h3>
+                              <p className="text-sm text-zinc-400">{categoryInfo.name}</p>
+                            </div>
+
+                            {associatedVehicle && (
+                              <div className="flex items-center gap-2 text-sm text-blue-400">
+                                <Car className="h-4 w-4 flex-shrink-0" />
+                                <span>
+                                  {associatedVehicle.nickname
+                                    ? `${associatedVehicle.nickname} - ${associatedVehicle.year} ${associatedVehicle.make} ${associatedVehicle.model}`
+                                    : `${associatedVehicle.year} ${associatedVehicle.make} ${associatedVehicle.model}`
+                                  }
+                                </span>
+                              </div>
+                            )}
+
                             {document.description && (
-                              <p className="text-sm text-zinc-500 mb-2 line-clamp-2">
+                              <p className="text-sm text-zinc-500 line-clamp-2">
                                 {document.description}
                               </p>
                             )}
-                            <div className="flex items-center gap-4 text-xs text-zinc-500">
+
+                            <div className="flex items-center gap-6 text-xs text-zinc-500">
                               <span>{document.sizeMB} MB</span>
                               <span>{new Date(document.createdAt).toLocaleDateString()}</span>
                               <div className="flex items-center gap-1">
@@ -407,15 +475,6 @@ export function DocumentManager({
 
                           {/* Actions */}
                           <div className="flex gap-2 flex-shrink-0">
-                            {document.status === 'processed' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="p-2 h-auto hover:bg-zinc-800"
-                              >
-                                <Download className="h-4 w-4 text-zinc-400" />
-                              </Button>
-                            )}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -445,6 +504,7 @@ export function DocumentManager({
                   onClick={() => {
                     setSearchQuery('')
                     setActiveFilter('all')
+                    setActiveVehicleFilter('all')
                   }}
                 >
                   Clear Filters
@@ -491,6 +551,7 @@ export function DocumentManager({
                 onClick={() => {
                   setShowUploadForm(false)
                   setSelectedFile(null)
+                  setSelectedVehicleId('')
                   setUploadDescription('')
                 }}
                 className="p-2 h-auto"
@@ -506,7 +567,7 @@ export function DocumentManager({
                 <label className="block text-sm font-medium text-zinc-300 mb-3">
                   Document Category *
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                   {DOCUMENT_CATEGORIES.map((category) => {
                     const Icon = category.icon
                     return (
@@ -528,6 +589,31 @@ export function DocumentManager({
                 </div>
               </div>
 
+              {/* Vehicle Selection */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Associate with Vehicle *
+                </label>
+                <select
+                  value={selectedVehicleId}
+                  onChange={(e) => setSelectedVehicleId(e.target.value)}
+                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+                  required
+                >
+                  <option value="">Select a vehicle</option>
+                  {userVehicles?.map((vehicle) => (
+                    <option key={vehicle.id} value={vehicle.id}>
+                      {vehicle.nickname ? `${vehicle.nickname} - ${vehicle.make} ${vehicle.model} ${vehicle.year}` : `${vehicle.make} ${vehicle.model} ${vehicle.year}`}
+                    </option>
+                  ))}
+                </select>
+                {!userVehicles?.length && (
+                  <p className="text-sm text-zinc-500 mt-2">
+                    No vehicles in your garage. Add a vehicle first to upload documents.
+                  </p>
+                )}
+              </div>
+
               {/* File Upload */}
               <div>
                 <label htmlFor="file-upload" className="block text-sm font-medium text-zinc-300 mb-2">
@@ -537,7 +623,7 @@ export function DocumentManager({
                   id="file-upload"
                   type="file"
                   onChange={handleFileSelect}
-                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.mp4,.mov"
+                  accept=".pdf,.doc,.docx,.txt"
                   className="block w-full text-sm text-zinc-300 file:mr-4 file:py-3 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-500 file:text-white hover:file:bg-blue-600 file:cursor-pointer cursor-pointer bg-zinc-800/50 border border-zinc-700 rounded-lg"
                 />
                 {selectedFile && (
@@ -545,6 +631,9 @@ export function DocumentManager({
                     Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
                   </p>
                 )}
+                <p className="text-xs text-zinc-500 mt-2">
+                  Supported files: PDF, Word documents (.doc, .docx), and text files (.txt) for AI processing
+                </p>
               </div>
 
               {/* Description */}
@@ -566,6 +655,7 @@ export function DocumentManager({
                   onClick={() => {
                     setShowUploadForm(false)
                     setSelectedFile(null)
+                    setSelectedVehicleId('')
                     setUploadDescription('')
                   }}
                 >
@@ -573,8 +663,8 @@ export function DocumentManager({
                 </Button>
                 <Button
                   onClick={handleUpload}
-                  disabled={!selectedFile || isUploading}
-                  className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 disabled:opacity-50"
+                  disabled={isUploading || !selectedFile || !selectedVehicleId}
+                  className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isUploading ? (
                     <>

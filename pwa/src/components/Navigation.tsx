@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Mic, Car, FileText, Settings, Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -18,7 +19,15 @@ const tabs = [
 ]
 
 export function Navigation({ activeTab, onTabChange, className }: NavigationProps) {
+  const router = useRouter()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const routes = {
+    chat: '/chat',
+    garage: '/garage',
+    documents: '/documents',
+    settings: '/settings'
+  }
 
   return (
     <>
@@ -31,7 +40,7 @@ export function Navigation({ activeTab, onTabChange, className }: NavigationProp
           return (
             <button
               key={tab.id}
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => router.push(routes[tab.id])}
               className={cn(
                 'flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-200',
                 isActive
@@ -63,19 +72,19 @@ export function Navigation({ activeTab, onTabChange, className }: NavigationProp
               const isActive = activeTab === tab.id
 
               return (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    onTabChange(tab.id)
-                    setMobileMenuOpen(false)
-                  }}
-                  className={cn(
-                    'flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200',
-                    isActive
-                      ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white'
-                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                  )}
-                >
+                                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      router.push(routes[tab.id])
+                      setMobileMenuOpen(false)
+                    }}
+                    className={cn(
+                      'flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200',
+                      isActive
+                        ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white'
+                        : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                    )}
+                  >
                   <Icon className="h-5 w-5" />
                   <span>{tab.label}</span>
                 </button>

@@ -56,11 +56,11 @@ export function VehicleSelector({
           <div className="min-w-0">
             {selectedVehicleData ? (
               <>
-                <div className="text-white text-sm font-medium truncate">
+                <div className="text-white text-sm font-medium break-words">
                   {getDisplayName(selectedVehicleData)}
                 </div>
                 {getSubtitle(selectedVehicleData) && (
-                  <div className="text-zinc-500 text-xs truncate">
+                  <div className="text-zinc-500 text-xs break-words">
                     {getSubtitle(selectedVehicleData)}
                   </div>
                 )}
@@ -102,11 +102,11 @@ export function VehicleSelector({
               >
                 <Car className="h-4 w-4 text-orange-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-white text-sm font-medium truncate">
+                  <div className="text-white text-sm font-medium break-words">
                     {getDisplayName(vehicle)}
                   </div>
                   {getSubtitle(vehicle) && (
-                    <div className="text-zinc-500 text-xs truncate">
+                    <div className="text-zinc-500 text-xs break-words">
                       {getSubtitle(vehicle)}
                     </div>
                   )}

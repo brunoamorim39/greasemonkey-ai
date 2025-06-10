@@ -16,7 +16,8 @@ import {
   Upload,
   MessageSquare,
   Shield,
-  Loader2
+  Loader2,
+  User
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createCheckoutSession } from '@/lib/stripe'
@@ -47,7 +48,7 @@ const plans: PricingPlan[] = [
     description: 'Get started with basic automotive assistance',
     monthlyPrice: 0,
     yearlyPrice: 0,
-    icon: <Mic className="h-6 w-6" />,
+    icon: <User className="h-6 w-6" />,
     features: [
       '3 questions per day',
       '1 vehicle in garage',
@@ -69,7 +70,7 @@ const plans: PricingPlan[] = [
     description: 'Pay-as-you-go for DIY enthusiasts',
     monthlyPrice: 0, // Usage-based pricing
     yearlyPrice: 0,
-    icon: <Car className="h-6 w-6" />,
+    icon: <Zap className="h-6 w-6" />,
     badge: 'Pay Per Use',
     popular: true,
     features: [
@@ -373,7 +374,7 @@ export function PricingPlans({
                       : plan.id === 'free'
                         ? 'Get Started'
                         : plan.id === 'weekend_warrior'
-                          ? 'Set Up Billing'
+                          ? 'Get Started'
                           : 'Upgrade to ' + plan.name
                   }
                 </Button>

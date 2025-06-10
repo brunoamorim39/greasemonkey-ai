@@ -15,35 +15,24 @@ const supabase = createClient<Database>(
 )
 
 export class UserService {
-  async getUserTier(userId: string): Promise<UserTier> {
+    async getUserTier(userId: string): Promise<UserTier> {
     try {
       const { data, error } = await supabase
-        .from('user_tiers')
-        .select('tier, tier_override, tier_override_expires_at')
-        .eq('user_id', userId)
+        .from('user_profiles')
+        .select('tier')
+        .eq('id', userId)
         .single()
 
-      // If table doesn't exist or other errors, return default tier
-      if (error && (error.code === '42P01' || error.code !== 'PGRST116')) {
-        console.warn('user_tiers table not found or error, using default tier:', error.message)
+      if (error) {
+        console.warn('Error getting user tier from user_profiles:', error.message)
         return 'free_tier'
       }
 
       if (!data) {
-        // Create default tier for new user - but only if table exists
-        // Skip creation if table doesn't exist
         return 'free_tier'
       }
 
-      // Check if tier override is active
-      if (data.tier_override && data.tier_override_expires_at) {
-        const expiresAt = new Date(data.tier_override_expires_at)
-        if (expiresAt > new Date()) {
-          return data.tier_override
-        }
-      }
-
-      return data.tier
+      return data.tier as UserTier
     } catch (error) {
       console.error('Error in getUserTier:', error)
       return 'free_tier'
@@ -53,21 +42,39 @@ export class UserService {
   async createUserTier(userId: string, tier: UserTier = 'free_tier'): Promise<void> {
     try {
       const { error } = await supabase
-        .from('user_tiers')
-        .insert({
-          user_id: userId,
+        .from('user_profiles')
+        .upsert({
+          id: userId,
           tier,
+        }, {
+          onConflict: 'id'
         })
 
       if (error) {
-        if (error.code === '42P01') {
-          console.warn('user_tiers table does not exist, skipping tier creation')
-        } else {
-          console.error('Error creating user tier:', error)
-        }
+        console.error('Error creating/updating user tier:', error)
       }
     } catch (error) {
       console.error('Error in createUserTier:', error)
+    }
+  }
+
+  async getUserProfile(userId: string): Promise<{ full_name?: string; email?: string } | null> {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('full_name, email')
+        .eq('id', userId)
+        .single()
+
+      if (error) {
+        console.warn('Error getting user profile:', error.message)
+        return null
+      }
+
+      return data
+    } catch (error) {
+      console.error('Error in getUserProfile:', error)
+      return null
     }
   }
 
@@ -150,18 +157,42 @@ export class UserService {
     try {
       const today = new Date().toISOString().split('T')[0]
 
+      // Map usage types to database values for usage_records table
+      const usageTypeMapping = {
+        'ask': 'ask_query',
+        'document_upload': 'document_upload',
+        'audio_request': 'tts_request'
+      }
+      const dbUsageType = usageTypeMapping[usageType]
+
       // Insert usage record
+      const insertData = {
+        user_id: userId,
+        usage_type: dbUsageType,
+        action_type: dbUsageType, // Both fields required in usage_records
+        cost_cents: 0,
+        details: details || {},
+      }
+
+      console.log('Attempting to insert usage data:', {
+        userId,
+        usageType,
+        dbUsageType,
+        insertData
+      })
+
       const { error: usageError } = await supabase
         .from('usage_records')
-        .insert({
-          user_id: userId,
-          usage_type: usageType,
-          usage_date: today,
-          details: details || null,
-        })
+        .insert(insertData)
 
       if (usageError) {
-        console.error('Error tracking usage:', usageError)
+        console.error('Error tracking usage:', {
+          message: usageError.message,
+          details: usageError.details,
+          hint: usageError.hint,
+          code: usageError.code,
+          full_error: usageError
+        })
         return false
       }
 
@@ -185,14 +216,22 @@ export class UserService {
         .eq('date', date)
         .single()
 
-      const increment = { [usageType + '_count']: 1 }
+      // Map usage types to actual column names in the database (FIXED: match actual schema)
+      const columnMapping = {
+        'ask': 'ask_queries',
+        'document_upload': 'document_uploads',
+        'audio_request': 'audio_requests'
+      }
+      const columnName = columnMapping[usageType]
+      const increment = { [columnName]: 1 }
 
       if (existing) {
-        // Update existing record
+        // Update existing record - increment the appropriate column
+        const currentValue = existing[columnName] || 0
         const { error } = await supabase
           .from('daily_usage_stats')
           .update({
-            ...increment,
+            [columnName]: currentValue + 1,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existing.id)
@@ -201,16 +240,15 @@ export class UserService {
           console.error('Error updating daily stats:', error)
         }
       } else {
-        // Create new record
+        // Create new record (FIXED: use correct column names)
         const { error } = await supabase
           .from('daily_usage_stats')
           .insert({
             user_id: userId,
             date,
-            ask_count: usageType === 'ask' ? 1 : 0,
-            document_upload_count: usageType === 'document_upload' ? 1 : 0,
-            tts_count: usageType === 'tts' ? 1 : 0,
-            stt_count: usageType === 'stt' ? 1 : 0,
+            ask_queries: usageType === 'ask' ? 1 : 0,
+            document_uploads: usageType === 'document_upload' ? 1 : 0,
+            audio_requests: usageType === 'audio_request' ? 1 : 0,
             total_cost_cents: 0,
           })
 
@@ -234,12 +272,12 @@ export class UserService {
         if (limits.maxDailyAsks !== null && limits.maxDailyAsks !== undefined) {
           const { data: dailyStats } = await supabase
             .from('daily_usage_stats')
-            .select('ask_count')
+            .select('ask_queries')
             .eq('user_id', userId)
             .eq('date', today)
             .single()
 
-          const currentDailyAsks = dailyStats?.ask_count || 0
+          const currentDailyAsks = dailyStats?.ask_queries || 0
           if (currentDailyAsks >= limits.maxDailyAsks) {
             return {
               allowed: false,
@@ -256,11 +294,11 @@ export class UserService {
 
           const { data: monthlyStats } = await supabase
             .from('daily_usage_stats')
-            .select('ask_count')
+            .select('ask_queries')
             .eq('user_id', userId)
             .gte('date', monthStartStr)
 
-          const currentMonthlyAsks = monthlyStats?.reduce((sum, day) => sum + day.ask_count, 0) || 0
+          const currentMonthlyAsks = monthlyStats?.reduce((sum, day) => sum + day.ask_queries, 0) || 0
           if (currentMonthlyAsks >= limits.maxMonthlyAsks) {
             return {
               allowed: false,
@@ -311,21 +349,19 @@ export class UserService {
 
       const monthlyStats = monthlyData?.reduce(
         (acc, day) => ({
-          ask_count: acc.ask_count + day.ask_count,
-          document_upload_count: acc.document_upload_count + day.document_upload_count,
-          tts_count: acc.tts_count + day.tts_count,
-          stt_count: acc.stt_count + day.stt_count,
+          ask_count: acc.ask_count + day.ask_queries,
+          document_upload_count: acc.document_upload_count + day.document_uploads,
+          audio_count: acc.audio_count + day.audio_requests,
           total_cost_cents: acc.total_cost_cents + day.total_cost_cents,
         }),
-        { ask_count: 0, document_upload_count: 0, tts_count: 0, stt_count: 0, total_cost_cents: 0 }
-      ) || { ask_count: 0, document_upload_count: 0, tts_count: 0, stt_count: 0, total_cost_cents: 0 }
+        { ask_count: 0, document_upload_count: 0, audio_count: 0, total_cost_cents: 0 }
+      ) || { ask_count: 0, document_upload_count: 0, audio_count: 0, total_cost_cents: 0 }
 
       return {
         daily: {
-          ask_count: dailyStats?.ask_count || 0,
-          document_upload_count: dailyStats?.document_upload_count || 0,
-          tts_count: dailyStats?.tts_count || 0,
-          stt_count: dailyStats?.stt_count || 0,
+          ask_count: dailyStats?.ask_queries || 0,
+          document_upload_count: dailyStats?.document_uploads || 0,
+          audio_count: dailyStats?.audio_requests || 0,
           total_cost_cents: dailyStats?.total_cost_cents || 0,
         },
         monthly: monthlyStats,
@@ -336,15 +372,41 @@ export class UserService {
           maxVehicles: limits.maxVehicles || undefined,
           maxStorageMB: limits.maxStorageMB || undefined,
         },
+        resetTimes: this.getResetTimes(tier)
       }
     } catch (error) {
       console.error('Error getting usage stats:', error)
       return {
-        daily: { ask_count: 0, document_upload_count: 0, tts_count: 0, stt_count: 0, total_cost_cents: 0 },
-        monthly: { ask_count: 0, document_upload_count: 0, tts_count: 0, stt_count: 0, total_cost_cents: 0 },
+        daily: { ask_count: 0, document_upload_count: 0, audio_count: 0, total_cost_cents: 0 },
+        monthly: { ask_count: 0, document_upload_count: 0, audio_count: 0, total_cost_cents: 0 },
         limits: {},
+        resetTimes: this.getResetTimes('free_tier')
       }
     }
+  }
+
+  private getResetTimes(tier: UserTier): { dailyReset?: string; monthlyReset?: string } {
+    const now = new Date()
+    const resetTimes: { dailyReset?: string; monthlyReset?: string } = {}
+
+    // Daily reset at midnight UTC (for free tier)
+    if (tier === 'free_tier') {
+      const tomorrow = new Date(now)
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
+      tomorrow.setUTCHours(0, 0, 0, 0)
+      resetTimes.dailyReset = tomorrow.toISOString()
+    }
+
+    // Monthly reset at midnight UTC on 1st of month (for master tech)
+    if (tier === 'master_tech') {
+      const nextMonth = new Date(now)
+      nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1)
+      nextMonth.setUTCDate(1)
+      nextMonth.setUTCHours(0, 0, 0, 0)
+      resetTimes.monthlyReset = nextMonth.toISOString()
+    }
+
+    return resetTimes
   }
 
   async logQuery(userId: string, question: string, response: string, vehicleContext?: Record<string, unknown>, responseTimeMs?: number): Promise<void> {

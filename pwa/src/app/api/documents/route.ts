@@ -26,10 +26,9 @@ async function uploadDocumentHandler(request: NextRequest & { userId: string }) 
     const file = formData.get('file') as File
     // Get authenticated user ID from middleware
     const userId = request.userId
-    const documentType = formData.get('document_type') as string
-    const carMake = formData.get('car_make') as string || undefined
-    const carModel = formData.get('car_model') as string || undefined
-    const carYear = formData.get('car_year') as string || undefined
+    const category = formData.get('category') as string
+    const vehicleId = formData.get('vehicle_id') as string || undefined
+    const description = formData.get('description') as string || undefined
 
     if (!file) {
       return NextResponse.json(
@@ -38,9 +37,9 @@ async function uploadDocumentHandler(request: NextRequest & { userId: string }) 
       )
     }
 
-    if (!documentType) {
+    if (!category) {
       return NextResponse.json(
-        { error: 'Document type is required' },
+        { error: 'Document category is required' },
         { status: 400 }
       )
     }
@@ -64,21 +63,19 @@ async function uploadDocumentHandler(request: NextRequest & { userId: string }) 
       )
     }
 
-    // Validate document type
-    const validTypes = ['service_manual', 'repair_manual', 'owners_manual', 'parts_catalog', 'wiring_diagram', 'other']
-    if (!validTypes.includes(documentType)) {
+    // Validate document category
+    const validCategories = ['service_manual', 'owners_manual', 'maintenance_record', 'other']
+    if (!validCategories.includes(category)) {
       return NextResponse.json(
-        { error: 'Invalid document type' },
+        { error: 'Invalid document category' },
         { status: 400 }
       )
     }
 
     const uploadRequest = {
       file,
-      document_type: documentType as 'service_manual' | 'repair_manual' | 'owners_manual' | 'parts_catalog' | 'wiring_diagram' | 'other',
-      car_make: carMake,
-      car_model: carModel,
-      car_year: carYear ? parseInt(carYear) : undefined,
+      category: category as 'service_manual' | 'owners_manual' | 'maintenance_record' | 'other',
+      vehicle_id: vehicleId,
     }
 
     const document = await documentService.uploadDocument(userId, uploadRequest)

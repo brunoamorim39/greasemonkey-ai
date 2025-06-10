@@ -30,7 +30,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
+  const [fullName, setFullName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -90,7 +90,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
     try {
       if (authMode === 'signup') {
-        const { data, error } = await signUp(email, password, name)
+        const { data, error } = await signUp(email, password, fullName)
         if (error) throw error
 
         if (data.user && !data.session) {
@@ -233,19 +233,19 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {authMode === 'signup' && (
+                                    {authMode === 'signup' && (
                     <div className="space-y-2">
-                      <label htmlFor="name-input" className="block text-sm font-medium text-zinc-300">
+                      <label htmlFor="full-name-input" className="block text-sm font-medium text-zinc-300">
                         Full Name
                       </label>
                       <div className="relative">
                         <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400" />
                         <Input
-                          id="name-input"
+                          id="full-name-input"
                           type="text"
                           placeholder="Enter your full name"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
                           className="pl-10"
                           required={authMode === 'signup'}
                         />

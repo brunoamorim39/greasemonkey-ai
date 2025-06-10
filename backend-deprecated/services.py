@@ -411,6 +411,7 @@ class DocumentManager:
             metadata = DocumentMetadata(
                 id=doc_id,
                 user_id=user_id,
+                vehicle_id=upload_request.vehicle_id,
                 title=upload_request.title,
                 filename=filename,
                 document_type=DocumentType.USER_UPLOAD,
@@ -513,10 +514,11 @@ class DocumentManager:
             logger.error(f"Error deleting document {document_id} for user {user_id}: {e}")
             return False
 
-    def search_documents(self, query: str, user_id: str, car_make: Optional[str] = None,
-                        car_model: Optional[str] = None, car_year: Optional[int] = None,
-                        document_types: List[DocumentType] = None, limit: int = 5) -> List[DocumentSearchResult]:
-        """Search through user's documents and system documents."""
+    def search_documents(self, query: str, user_id: str, vehicle_id: Optional[str] = None,
+                        car_make: Optional[str] = None, car_model: Optional[str] = None,
+                        car_year: Optional[int] = None, document_types: List[DocumentType] = None,
+                        limit: int = 5) -> List[DocumentSearchResult]:
+        """Search through user's documents and system documents, optionally filtered by vehicle."""
         try:
             if not OPENAI_API_KEY:
                 return []
@@ -536,6 +538,10 @@ class DocumentManager:
                     user_results = user_vectorstore.similarity_search_with_score(query, k=limit)
 
                     for doc, score in user_results:
+                        # Filter by vehicle if specified
+                        if vehicle_id and doc.metadata.get("vehicle_id") != vehicle_id:
+                            continue
+
                         # Filter by car information if provided
                         if self._matches_car_criteria(doc.metadata, car_make, car_model, car_year):
                             results.append(DocumentSearchResult(
@@ -546,26 +552,27 @@ class DocumentManager:
                 except Exception as e:
                     logger.warning(f"Error searching user documents for {user_id}: {e}")
 
-            # Search system documents (Bentley/Haynes manuals, etc.)
-            system_chroma_path = os.path.join(CHROMA_PATH, "system_documents")
-            if os.path.exists(system_chroma_path):
-                try:
-                    system_vectorstore = Chroma(
-                        persist_directory=system_chroma_path,
-                        embedding_function=embeddings,
-                        collection_name="system_documents"
-                    )
-                    system_results = system_vectorstore.similarity_search_with_score(query, k=limit)
+            # Search system documents (Bentley/Haynes manuals, etc.) - only if no specific vehicle filter
+            if not vehicle_id:
+                system_chroma_path = os.path.join(CHROMA_PATH, "system_documents")
+                if os.path.exists(system_chroma_path):
+                    try:
+                        system_vectorstore = Chroma(
+                            persist_directory=system_chroma_path,
+                            embedding_function=embeddings,
+                            collection_name="system_documents"
+                        )
+                        system_results = system_vectorstore.similarity_search_with_score(query, k=limit)
 
-                    for doc, score in system_results:
-                        if self._matches_car_criteria(doc.metadata, car_make, car_model, car_year):
-                            results.append(DocumentSearchResult(
-                                content=doc.page_content,
-                                metadata=DocumentMetadata(**doc.metadata),
-                                relevance_score=1.0 - score
-                            ))
-                except Exception as e:
-                    logger.warning(f"Error searching system documents: {e}")
+                        for doc, score in system_results:
+                            if self._matches_car_criteria(doc.metadata, car_make, car_model, car_year):
+                                results.append(DocumentSearchResult(
+                                    content=doc.page_content,
+                                    metadata=DocumentMetadata(**doc.metadata),
+                                    relevance_score=1.0 - score
+                                ))
+                    except Exception as e:
+                        logger.warning(f"Error searching system documents: {e}")
 
             # Sort by relevance score and limit results
             results.sort(key=lambda x: x.relevance_score, reverse=True)

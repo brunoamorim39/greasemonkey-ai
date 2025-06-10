@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Car, Plus, Edit3, Trash2, Save, X, Heart, Gauge, Star, CheckCircle2, AlertCircle, ArrowUp } from 'lucide-react'
+import { Car, Plus, Edit3, Trash2, Save, X, AlertCircle, ArrowUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
 import { getTierDisplayName } from '@/lib/utils/tier'
 import type { Database } from '@/lib/supabase'
+import { InactiveVehicleManager } from './InactiveVehicleManager'
+import { VehicleCard } from './VehicleCard'
 import React from 'react'
 
 type VehicleInsert = Database['public']['Tables']['vehicles']['Insert']
@@ -26,8 +28,16 @@ interface Vehicle {
   mileage?: number
 }
 
+interface InactiveVehicle extends Vehicle {
+  is_active?: boolean
+  deactivated_at?: string
+  deactivation_reason?: string
+  last_used_at?: string
+}
+
 interface VehicleManagerProps {
   vehicles: Vehicle[]
+  inactiveVehicles?: any[]
   onCreateVehicle: (vehicle: Omit<Vehicle, 'id'>) => Promise<void>
   onUpdateVehicle: (id: string, vehicle: Partial<Vehicle>) => Promise<void>
   onDeleteVehicle: (id: string) => Promise<void>
@@ -57,8 +67,156 @@ interface VehicleManagerProps {
   } | null
 }
 
+// Edit Vehicle Card Component
+function EditVehicleCard({
+  vehicle,
+  onSave,
+  onCancel
+}: {
+  vehicle: Vehicle
+  onSave: (updates: Partial<Vehicle>) => void
+  onCancel: () => void
+}) {
+  const [editData, setEditData] = useState<Partial<Vehicle>>({
+    make: vehicle.make,
+    model: vehicle.model,
+    year: vehicle.year,
+    nickname: vehicle.nickname || '',
+    trim: vehicle.trim || '',
+    engine: vehicle.engine || '',
+    mileage: vehicle.mileage,
+    notes: vehicle.notes || ''
+  })
+
+  const handleSave = () => {
+    onSave(editData)
+  }
+
+  return (
+    <Card className="border-orange-500/30 bg-zinc-900/50">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-3">
+            <Edit3 className="h-5 w-5 text-orange-500" />
+            Edit Vehicle
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+            className="p-2 h-auto"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {/* Basic Info */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">Year *</label>
+              <Input
+                type="number"
+                value={editData.year || ''}
+                onChange={(e) => setEditData({ ...editData, year: parseInt(e.target.value) || new Date().getFullYear() })}
+                min="1900"
+                max={new Date().getFullYear() + 2}
+                required
+                className="bg-zinc-800/50 border-zinc-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">Make *</label>
+              <Input
+                value={editData.make || ''}
+                onChange={(e) => setEditData({ ...editData, make: e.target.value })}
+                required
+                className="bg-zinc-800/50 border-zinc-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">Model *</label>
+              <Input
+                value={editData.model || ''}
+                onChange={(e) => setEditData({ ...editData, model: e.target.value })}
+                required
+                className="bg-zinc-800/50 border-zinc-700"
+              />
+            </div>
+          </div>
+
+          {/* Additional Details */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">Nickname</label>
+              <Input
+                value={editData.nickname || ''}
+                onChange={(e) => setEditData({ ...editData, nickname: e.target.value })}
+                className="bg-zinc-800/50 border-zinc-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">Trim Level</label>
+              <Input
+                value={editData.trim || ''}
+                onChange={(e) => setEditData({ ...editData, trim: e.target.value })}
+                className="bg-zinc-800/50 border-zinc-700"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">Engine</label>
+              <Input
+                value={editData.engine || ''}
+                onChange={(e) => setEditData({ ...editData, engine: e.target.value })}
+                className="bg-zinc-800/50 border-zinc-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">Current Mileage</label>
+              <Input
+                type="number"
+                value={editData.mileage || ''}
+                onChange={(e) => setEditData({ ...editData, mileage: parseInt(e.target.value) || undefined })}
+                className="bg-zinc-800/50 border-zinc-700"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-2">Notes</label>
+            <textarea
+              value={editData.notes || ''}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditData({ ...editData, notes: e.target.value })}
+              className="w-full bg-zinc-800/50 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder:text-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 min-h-[80px]"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+            <Button variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+              disabled={!editData.make || !editData.model || !editData.year}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              Save Changes
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function VehicleManager({
   vehicles,
+  inactiveVehicles = [],
   onCreateVehicle,
   onUpdateVehicle,
   onDeleteVehicle,
@@ -83,8 +241,6 @@ export function VehicleManager({
   const maxVehicles = userStats?.usage?.limits?.maxVehicles
   const currentVehicles = vehicles.length
   const isAtVehicleLimit = maxVehicles !== undefined && maxVehicles !== null && currentVehicles >= maxVehicles
-
-
 
   const handleCreateVehicle = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -194,19 +350,26 @@ export function VehicleManager({
       {/* Vehicle List */}
       {vehicles.length > 0 ? (
         <div className="space-y-3">
-          {vehicles.map((vehicle) => (
-            <VehicleCard
-              key={vehicle.id}
-              vehicle={vehicle}
-              isSelected={selectedVehicle === vehicle.id}
-              isEditing={editingVehicle === vehicle.id}
-              onSelect={() => onVehicleSelect?.(vehicle.id)}
-              onEdit={() => setEditingVehicle(vehicle.id)}
-              onSave={(updates) => handleUpdateVehicle(vehicle.id, updates)}
-              onCancel={() => setEditingVehicle(null)}
-              onDelete={() => handleDeleteVehicle(vehicle.id)}
-            />
-          ))}
+          {vehicles.map((vehicle) =>
+            editingVehicle === vehicle.id ? (
+              <EditVehicleCard
+                key={vehicle.id}
+                vehicle={vehicle}
+                onSave={(updates) => handleUpdateVehicle(vehicle.id, updates)}
+                onCancel={() => setEditingVehicle(null)}
+              />
+            ) : (
+              <VehicleCard
+                key={vehicle.id}
+                vehicle={vehicle}
+                status="active"
+                isSelected={selectedVehicle === vehicle.id}
+                onClick={() => onVehicleSelect?.(vehicle.id)}
+                onEdit={() => setEditingVehicle(vehicle.id)}
+                onDelete={() => handleDeleteVehicle(vehicle.id)}
+              />
+            )
+          )}
         </div>
       ) : (
         <Card className="border-zinc-800/50">
@@ -229,6 +392,14 @@ export function VehicleManager({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Inactive Vehicles */}
+      {inactiveVehicles.length > 0 && (
+        <InactiveVehicleManager
+          inactiveVehicles={inactiveVehicles}
+          currentTier={tier}
+        />
       )}
 
       {/* Add Vehicle Form */}
@@ -333,15 +504,15 @@ export function VehicleManager({
                 </div>
               </div>
 
-                             <div>
-                 <label className="block text-sm font-medium text-zinc-300 mb-2">Notes</label>
-                 <textarea
-                   placeholder="Any additional details about your vehicle..."
-                   value={newVehicle.notes || ''}
-                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewVehicle({ ...newVehicle, notes: e.target.value })}
-                   className="w-full bg-zinc-800/50 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder:text-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 min-h-[80px]"
-                 />
-               </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Notes</label>
+                <textarea
+                  placeholder="Any additional details about your vehicle..."
+                  value={newVehicle.notes || ''}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewVehicle({ ...newVehicle, notes: e.target.value })}
+                  className="w-full bg-zinc-800/50 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder:text-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 min-h-[80px]"
+                />
+              </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
                 <Button
@@ -365,269 +536,5 @@ export function VehicleManager({
         </Card>
       )}
     </div>
-  )
-}
-
-interface VehicleCardProps {
-  vehicle: Vehicle
-  isSelected: boolean
-  isEditing: boolean
-  onSelect: () => void
-  onEdit: () => void
-  onSave: (updates: Partial<Vehicle>) => void
-  onCancel: () => void
-  onDelete: () => void
-}
-
-function VehicleCard({
-  vehicle,
-  isSelected,
-  isEditing,
-  onSelect,
-  onEdit,
-  onSave,
-  onCancel,
-  onDelete
-}: VehicleCardProps) {
-  const [editData, setEditData] = useState<Partial<Vehicle>>({})
-
-  useEffect(() => {
-    if (isEditing) {
-      setEditData({
-        make: vehicle.make,
-        model: vehicle.model,
-        year: vehicle.year,
-        nickname: vehicle.nickname || '',
-        trim: vehicle.trim || '',
-        engine: vehicle.engine || '',
-        mileage: vehicle.mileage,
-        notes: vehicle.notes || ''
-      })
-    }
-  }, [isEditing, vehicle])
-
-  const handleSave = () => {
-    onSave(editData)
-  }
-
-  if (isEditing) {
-    return (
-      <Card className="border-orange-500/30 bg-zinc-900/50">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-3">
-              <Edit3 className="h-5 w-5 text-orange-500" />
-              Edit Vehicle
-            </CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onCancel}
-              className="p-2 h-auto"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* Basic Info */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Year *</label>
-                <Input
-                  type="number"
-                  value={editData.year || ''}
-                  onChange={(e) => setEditData({ ...editData, year: parseInt(e.target.value) || new Date().getFullYear() })}
-                  min="1900"
-                  max={new Date().getFullYear() + 2}
-                  required
-                  className="bg-zinc-800/50 border-zinc-700"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Make *</label>
-                <Input
-                  value={editData.make || ''}
-                  onChange={(e) => setEditData({ ...editData, make: e.target.value })}
-                  required
-                  className="bg-zinc-800/50 border-zinc-700"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Model *</label>
-                <Input
-                  value={editData.model || ''}
-                  onChange={(e) => setEditData({ ...editData, model: e.target.value })}
-                  required
-                  className="bg-zinc-800/50 border-zinc-700"
-                />
-              </div>
-            </div>
-
-            {/* Additional Details */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Nickname</label>
-                <Input
-                  value={editData.nickname || ''}
-                  onChange={(e) => setEditData({ ...editData, nickname: e.target.value })}
-                  className="bg-zinc-800/50 border-zinc-700"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Trim Level</label>
-                <Input
-                  value={editData.trim || ''}
-                  onChange={(e) => setEditData({ ...editData, trim: e.target.value })}
-                  className="bg-zinc-800/50 border-zinc-700"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Engine</label>
-                <Input
-                  value={editData.engine || ''}
-                  onChange={(e) => setEditData({ ...editData, engine: e.target.value })}
-                  className="bg-zinc-800/50 border-zinc-700"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">Current Mileage</label>
-                <Input
-                  type="number"
-                  value={editData.mileage || ''}
-                  onChange={(e) => setEditData({ ...editData, mileage: parseInt(e.target.value) || undefined })}
-                  className="bg-zinc-800/50 border-zinc-700"
-                />
-              </div>
-            </div>
-
-                         <div>
-               <label className="block text-sm font-medium text-zinc-300 mb-2">Notes</label>
-               <textarea
-                 value={editData.notes || ''}
-                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditData({ ...editData, notes: e.target.value })}
-                 className="w-full bg-zinc-800/50 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder:text-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 min-h-[80px]"
-               />
-             </div>
-
-            <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
-              <Button variant="outline" onClick={onCancel}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSave}
-                className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
-                disabled={!editData.make || !editData.model || !editData.year}
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Save Changes
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card
-      className={cn(
-        "transition-all duration-200 cursor-pointer hover:bg-zinc-900/50 overflow-hidden",
-        isSelected && "ring-2 ring-orange-500 bg-orange-500/5"
-      )}
-      onClick={onSelect}
-    >
-      <CardContent className="p-4">
-        <div className="space-y-3">
-          {/* Header Row - Vehicle Icon, Name, and Status */}
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center flex-shrink-0">
-              <Car className="h-6 w-6 text-white" />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <h3 className="font-semibold text-white text-lg truncate">
-                  {vehicle.displayName}
-                </h3>
-                {isSelected && (
-                  <div className="flex items-center gap-1 px-2 py-1 bg-orange-500 rounded text-xs font-medium flex-shrink-0">
-                    <CheckCircle2 className="h-3 w-3" />
-                    Active
-                  </div>
-                )}
-              </div>
-
-              {vehicle.nickname && (
-                <div className="flex items-center gap-1">
-                  <Heart className="h-4 w-4 text-pink-400" />
-                  <span className="text-pink-400 font-medium">{vehicle.nickname}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Vehicle Details */}
-          {(vehicle.engine || vehicle.mileage || vehicle.trim) && (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-zinc-400 ml-[60px]">
-              {vehicle.engine && (
-                <div className="flex items-center gap-1">
-                  <span>🔧</span>
-                  <span className="truncate">{vehicle.engine}</span>
-                </div>
-              )}
-              {vehicle.mileage && (
-                <div className="flex items-center gap-1">
-                  <Gauge className="h-3 w-3 flex-shrink-0" />
-                  <span>{vehicle.mileage.toLocaleString()} mi</span>
-                </div>
-              )}
-              {vehicle.trim && (
-                <div className="flex items-center gap-1 col-span-2">
-                  <Star className="h-3 w-3 flex-shrink-0" />
-                  <span className="truncate">{vehicle.trim}</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {vehicle.notes && (
-            <p className="text-sm text-zinc-500 line-clamp-2 ml-[60px]">{vehicle.notes}</p>
-          )}
-
-          {/* Action Buttons Row */}
-          <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800/50">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                onEdit()
-              }}
-              className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 text-zinc-400 hover:text-white"
-            >
-              <Edit3 className="h-4 w-4" />
-              <span className="text-xs">Edit</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete()
-              }}
-              className="flex items-center gap-2 px-3 py-2 hover:bg-red-500/20 hover:text-red-400 text-zinc-400"
-            >
-              <Trash2 className="h-4 w-4" />
-              <span className="text-xs">Delete</span>
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   )
 }

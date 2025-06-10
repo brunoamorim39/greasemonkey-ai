@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-12-18.acacia',
+  apiVersion: '2025-02-24.acacia',
 })
 
 const supabase = createClient(
@@ -50,6 +50,16 @@ export async function POST(request: NextRequest) {
           userId: userId,
           planId: planId,
         },
+        custom_text: {
+          submit: {
+            message: 'Add your payment method to get started with pay-per-question pricing'
+          }
+        },
+        ui_mode: 'hosted',
+        phone_number_collection: {
+          enabled: false
+        },
+        billing_address_collection: 'auto',
       })
     } else if (planId === 'master_tech') {
       // Subscription pricing for Master Tech
@@ -78,6 +88,20 @@ export async function POST(request: NextRequest) {
           planId: planId,
           billingType: billingType,
         },
+        custom_text: {
+          submit: {
+            message: `Start your ${billingType} Master Tech subscription with unlimited questions`
+          }
+        },
+        allow_promotion_codes: true, // Allow discount codes
+        ui_mode: 'hosted',
+        invoice_creation: {
+          enabled: true,
+        },
+        phone_number_collection: {
+          enabled: false
+        },
+        billing_address_collection: 'auto',
       })
     } else {
       return NextResponse.json({ error: 'Invalid plan ID' }, { status: 400 })

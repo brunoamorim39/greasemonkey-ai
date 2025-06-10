@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Settings, Car, FileText, Menu, X, ChevronDown } from 'lucide-react'
 import { Button } from './ui/Button'
 import { UsageIndicator } from './UsageIndicator'
@@ -49,6 +50,7 @@ export function MobileLayout({
   selectedVehicle = '',
   onVehicleSelect
 }: MobileLayoutProps) {
+  const router = useRouter()
   const [showMenu, setShowMenu] = useState(false)
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false)
   const vehicleDropdownRef = useRef<HTMLDivElement>(null)
@@ -158,11 +160,11 @@ export function MobileLayout({
                   <div className="min-w-0">
                     {selectedVehicleData ? (
                       <>
-                        <div className="text-white text-sm font-medium truncate">
+                        <div className="text-white text-sm font-medium break-words">
                           {getVehicleDisplayName(selectedVehicleData)}
                         </div>
                         {selectedVehicleData.nickname && (
-                          <div className="text-zinc-500 text-xs truncate">
+                          <div className="text-zinc-500 text-xs break-words">
                             {selectedVehicleData.year} {selectedVehicleData.make} {selectedVehicleData.model}
                           </div>
                         )}
@@ -205,24 +207,33 @@ export function MobileLayout({
             </div>
 
             <div className="space-y-2">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    onTabChange(tab.id)
-                    setShowMenu(false)
-                  }}
-                  className={cn(
-                    'w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all',
-                    activeTab === tab.id
-                      ? 'bg-orange-500 text-white'
-                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-                  )}
-                >
-                  <span className="text-lg">{tab.icon}</span>
-                  <span className="font-medium">{tab.label}</span>
-                </button>
-              ))}
+              {tabs.map((tab) => {
+                const routes = {
+                  chat: '/chat',
+                  garage: '/garage',
+                  documents: '/documents',
+                  settings: '/settings'
+                };
+
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      router.push(routes[tab.id])
+                      setShowMenu(false)
+                    }}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all',
+                      activeTab === tab.id
+                        ? 'bg-orange-500 text-white'
+                        : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                    )}
+                  >
+                    <span className="text-lg">{tab.icon}</span>
+                    <span className="font-medium">{tab.label}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
         </>

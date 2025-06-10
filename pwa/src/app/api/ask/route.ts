@@ -6,16 +6,22 @@ import { userService } from '@/lib/services/user-service'
 import { vehicleService } from '@/lib/services/vehicle-service'
 import { documentService } from '@/lib/services/document-service'
 import { buildSystemPrompt, detectVehicleInfo, detectVehicleFromGarage, isOffTopic, isUnclearMessage, UserVehicle } from '@/lib/prompts'
+import { createClient } from '@supabase/supabase-js'
+
+// Create admin client for server-side operations (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
 })
 
-console.log('OpenAI API Key check:', {
-  hasApiKey: !!config.openai.apiKey,
-  apiKeyLength: config.openai.apiKey?.length || 0,
-  apiKeyPrefix: config.openai.apiKey?.substring(0, 7) || 'none'
-})
+// Removed API key logging for security - only log if key is missing
+if (!config.openai.apiKey) {
+  console.error('❌ OpenAI API Key is missing!')
+}
 
 interface SearchResult {
   document: {
@@ -118,9 +124,23 @@ async function askHandler(request: NextRequest & { userId: string }) {
     let documentContext = ''
     let searchResults: SearchResult[] = []
     if (includeDocuments) {
+      console.log('📚 Starting document search for question:', question)
+
       searchResults = await documentService.searchDocuments(userId, {
         query: question,
+        car_make: selectedVehicle?.make,
+        car_model: selectedVehicle?.model,
+        car_year: selectedVehicle?.year,
         limit: 3
+      })
+
+      console.log('📋 Document search completed:', {
+        searchResultsCount: searchResults.length,
+        searchResults: searchResults.map(r => ({
+          filename: r.document.original_filename,
+          contentLength: r.content.length,
+          contentPreview: r.content.substring(0, 150) + '...'
+        }))
       })
 
       if (searchResults.length > 0) {
@@ -128,7 +148,16 @@ async function askHandler(request: NextRequest & { userId: string }) {
           searchResults.map(result =>
             `- ${result.document.original_filename}: ${result.content}`
           ).join('\n')
+
+        console.log('📝 Document context built:', {
+          documentContextLength: documentContext.length,
+          documentContext: documentContext.substring(0, 500) + '...'
+        })
+      } else {
+        console.log('❌ No documents found or matched for question')
       }
+    } else {
+      console.log('🚫 Document search disabled (includeDocuments = false)')
     }
 
     // Analyze the user's question for intelligent prompting
@@ -143,20 +172,39 @@ async function askHandler(request: NextRequest & { userId: string }) {
     }
 
     // Build the intelligent system prompt
-    const systemPrompt = buildSystemPrompt({
+    const basePrompt = buildSystemPrompt({
       vehicleContext: vehicleContextString || undefined,
       hasVehicleInMessage: vehicleInfo.hasVehicleInfo,
       isUnclear,
       isOffTopic: isOffTopicQuery,
       needsVehicleConfirmation: needsVehicleConfirmation || undefined
-    }) + '\n\n' + unitInstructions + vehicleContext + documentContext
+    })
 
-    // Debug right before OpenAI call
-    console.log('About to call OpenAI with:', {
+    const systemPrompt = basePrompt + '\n\n' + unitInstructions + vehicleContext + documentContext
+
+    console.log('🤖 Final system prompt composition:', {
+      basePromptLength: basePrompt.length,
+      unitInstructionsLength: unitInstructions.length,
+      vehicleContextLength: vehicleContext.length,
+      documentContextLength: documentContext.length,
+      totalSystemPromptLength: systemPrompt.length,
+      hasDocumentContext: documentContext.length > 0,
+      documentsUsed: searchResults.length
+    })
+
+    if (documentContext.length > 0) {
+      console.log('📖 Document context being sent to GPT:', {
+        documentContext: documentContext.substring(0, 1000) + (documentContext.length > 1000 ? '...' : '')
+      })
+    }
+
+    // Debug right before OpenAI call (no sensitive data)
+    console.log('🚀 About to call OpenAI with:', {
       hasClient: !!openai,
-      clientApiKey: openai.apiKey ? `${openai.apiKey.substring(0, 10)}...${openai.apiKey.slice(-4)}` : 'MISSING',
+      hasApiKey: !!openai.apiKey,
       model: config.openai.model,
-      systemPromptLength: systemPrompt.length
+      systemPromptLength: systemPrompt.length,
+      questionLength: question.length
     })
 
     // Call GPT-4
@@ -172,6 +220,14 @@ async function askHandler(request: NextRequest & { userId: string }) {
 
     const response = completion.choices[0]?.message?.content || 'I apologize, but I could not generate a response.'
     const responseTime = Date.now() - startTime
+
+    console.log('✅ OpenAI response received:', {
+      responseLength: response.length,
+      responseTimeMs: responseTime,
+      hadDocumentContext: documentContext.length > 0,
+      documentsUsedInPrompt: searchResults.length,
+      responsePreview: response.substring(0, 200) + '...'
+    })
 
     // Track usage
     await userService.trackUsage(userId, 'ask', {
@@ -225,10 +281,11 @@ async function askHandler(request: NextRequest & { userId: string }) {
           const audioBase64 = Buffer.from(audioBuffer).toString('base64')
           audioUrl = `data:audio/mpeg;base64,${audioBase64}`
 
-          // Track TTS usage
-          await userService.trackUsage(userId, 'tts', {
+          // Track audio usage (TTS)
+          await userService.trackUsage(userId, 'audio_request', {
             text_length: response.length,
             model: config.elevenlabs.modelId,
+            type: 'tts'
           })
         }
       }
@@ -237,8 +294,41 @@ async function askHandler(request: NextRequest & { userId: string }) {
       // Continue without TTS
     }
 
+    // Save conversation to conversations table
+    try {
+      console.log('💾 Saving conversation to database:', {
+        userId,
+        vehicleId: effectiveVehicleId || null,
+        questionLength: question.length,
+        answerLength: response.length,
+        hasAudio: !!audioUrl
+      })
+
+      const { data, error: conversationError } = await supabaseAdmin
+        .from('conversations')
+        .insert({
+          user_id: userId,
+          question,
+          answer: response,
+          audio_url: audioUrl,
+          vehicle_id: effectiveVehicleId || null,
+        })
+        .select()
+
+      if (conversationError) {
+        console.error('❌ Error saving conversation:', conversationError)
+      } else {
+        console.log('✅ Conversation saved successfully:', {
+          conversationId: data?.[0]?.id,
+          createdAt: data?.[0]?.created_at
+        })
+      }
+    } catch (error) {
+      console.error('❌ Error in conversation save:', error)
+    }
+
     return NextResponse.json({
-      response,
+      answer: response, // Frontend expects 'answer' not 'response'
       audioUrl,
       responseTimeMs: responseTime,
       vehicleContext: effectiveVehicleId ? vehicleContext : undefined,

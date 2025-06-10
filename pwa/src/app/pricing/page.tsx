@@ -23,14 +23,14 @@ export default function PricingPage() {
           setUser(user)
 
           // Get user's current plan from database
-          const { data: userTier } = await supabase
-            .from('user_tiers')
+          const { data: userProfile } = await supabase
+            .from('user_profiles')
             .select('tier')
-            .eq('user_id', user.id)
+            .eq('id', user.id)
             .single()
 
-          if (userTier?.tier) {
-            setCurrentPlan(userTier.tier)
+          if (userProfile?.tier) {
+            setCurrentPlan(userProfile.tier)
           }
         }
       } catch (error) {
@@ -49,14 +49,14 @@ export default function PricingPage() {
           setUser(session.user)
 
           // Fetch user plan
-          const { data: userTier } = await supabase
-            .from('user_tiers')
+          const { data: userProfile } = await supabase
+            .from('user_profiles')
             .select('tier')
-            .eq('user_id', session.user.id)
+            .eq('id', session.user.id)
             .single()
 
-          if (userTier?.tier) {
-            setCurrentPlan(userTier.tier)
+          if (userProfile?.tier) {
+            setCurrentPlan(userProfile.tier)
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null)

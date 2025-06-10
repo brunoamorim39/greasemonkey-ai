@@ -150,7 +150,7 @@ export const ChatInterface = memo(({
   return (
     <div className="flex flex-col h-full max-w-2xl mx-auto">
       {/* Conversation History */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-6 scrollbar-none">
         {/* Previous Conversations - Show in reverse chronological order */}
         {conversationHistory.slice().reverse().map((message) => (
           <div key={message.id} className="space-y-4">
@@ -182,7 +182,7 @@ export const ChatInterface = memo(({
               </div>
               <div className="bg-gradient-to-r from-zinc-900/80 to-zinc-800/50 rounded-2xl p-4 border border-zinc-800/50 shadow-lg">
                 <div className="text-zinc-100 leading-relaxed space-y-3">
-                  {message.answer.split('\n').map((line, index) => (
+                  {(message.answer || '').split('\n').map((line, index) => (
                     <p key={index} className="text-base">{line || '\u00A0'}</p>
                   ))}
                 </div>
@@ -242,7 +242,7 @@ export const ChatInterface = memo(({
             </div>
             <div className="bg-gradient-to-r from-zinc-900/80 to-zinc-800/50 rounded-2xl p-5 border border-zinc-800/50 shadow-xl">
               <div className="space-y-4">
-                {answer.split('\n').map((line, index) => (
+                {(answer || '').split('\n').map((line, index) => (
                   <p key={index} className="text-zinc-100 leading-relaxed text-base">
                     {line || '\u00A0'}
                   </p>
@@ -408,7 +408,7 @@ export const ChatInterface = memo(({
                   }
                 }}
                 placeholder="Or type your question..."
-                className="flex-1 w-full resize-none rounded-xl bg-zinc-800/80 border border-zinc-700/60 text-white placeholder-zinc-500 p-3 pr-20 shadow-lg focus:ring-2 focus:ring-orange-500/70 focus:border-orange-500/70 outline-none transition-all max-h-24 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-800"
+                className="flex-1 w-full resize-none rounded-xl bg-zinc-800/80 border border-zinc-700/60 text-white placeholder-zinc-500 p-3 pr-20 shadow-lg focus:ring-2 focus:ring-orange-500/70 focus:border-orange-500/70 outline-none transition-all max-h-24 scrollbar-none"
                 rows={1}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">

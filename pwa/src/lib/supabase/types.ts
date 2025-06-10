@@ -73,6 +73,10 @@ export interface Database {
           nickname?: string
           notes?: string
           mileage?: number
+          is_active?: boolean
+          deactivated_at?: string
+          deactivation_reason?: string
+          last_used_at?: string
           created_at: string
           updated_at: string
         }
@@ -88,6 +92,10 @@ export interface Database {
           nickname?: string
           notes?: string
           mileage?: number
+          is_active?: boolean
+          deactivated_at?: string
+          deactivation_reason?: string
+          last_used_at?: string
           created_at?: string
           updated_at?: string
         }
@@ -101,6 +109,10 @@ export interface Database {
           nickname?: string
           notes?: string
           mileage?: number
+          is_active?: boolean
+          deactivated_at?: string
+          deactivation_reason?: string
+          last_used_at?: string
           updated_at?: string
         }
       }
@@ -118,9 +130,11 @@ export interface Database {
           car_make?: string
           car_model?: string
           car_year?: number
-          status: 'uploaded' | 'processing' | 'processed' | 'failed'
+          status: 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
           storage_path: string
           metadata: Json
+          deactivated_at?: string
+          deactivation_reason?: string
           created_at: string
           updated_at: string
         }
@@ -135,16 +149,20 @@ export interface Database {
           car_make?: string
           car_model?: string
           car_year?: number
-          status?: 'uploaded' | 'processing' | 'processed' | 'failed'
+          status?: 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
           storage_path: string
           metadata?: Json
+          deactivated_at?: string
+          deactivation_reason?: string
           created_at?: string
           updated_at?: string
         }
         Update: {
           filename?: string
-          status?: 'uploaded' | 'processing' | 'processed' | 'failed'
+          status?: 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
           metadata?: Json
+          deactivated_at?: string
+          deactivation_reason?: string
           updated_at?: string
         }
       }
@@ -182,8 +200,9 @@ export interface Database {
         Row: {
           id: string
           user_id: string
-          usage_type: 'ask' | 'document_upload' | 'tts' | 'stt'
-          usage_date: string
+          usage_type: 'ask_query' | 'document_upload' | 'tts_request'
+          action_type: 'ask_query' | 'document_upload' | 'tts_request'
+          timestamp: string
           cost_cents?: number
           details?: Json
           created_at: string
@@ -191,8 +210,9 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
-          usage_type: 'ask' | 'document_upload' | 'tts' | 'stt'
-          usage_date?: string
+          usage_type: 'ask_query' | 'document_upload' | 'tts_request'
+          action_type: 'ask_query' | 'document_upload' | 'tts_request'
+          timestamp?: string
           cost_cents?: number
           details?: Json
           created_at?: string
@@ -331,6 +351,10 @@ export interface Vehicle {
   nickname?: string
   notes?: string
   mileage?: number
+  is_active?: boolean
+  deactivated_at?: string
+  deactivation_reason?: string
+  last_used_at?: string
   created_at: string
   updated_at: string
 }
@@ -346,9 +370,11 @@ export interface DocumentMetadata {
   car_make?: string
   car_model?: string
   car_year?: number
-  status: 'uploaded' | 'processing' | 'processed' | 'failed'
+  status: 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
   storage_path: string
   metadata: Json
+  deactivated_at?: string
+  deactivation_reason?: string
   created_at: string
   updated_at: string
 }
@@ -357,15 +383,13 @@ export interface UsageStats {
   daily: {
     ask_count: number
     document_upload_count: number
-    tts_count: number
-    stt_count: number
+    audio_count: number
     total_cost_cents: number
   }
   monthly: {
     ask_count: number
     document_upload_count: number
-    tts_count: number
-    stt_count: number
+    audio_count: number
     total_cost_cents: number
   }
   limits: {
@@ -374,6 +398,10 @@ export interface UsageStats {
     maxDocumentUploads?: number
     maxVehicles?: number
     maxStorageMB?: number
+  }
+  resetTimes?: {
+    dailyReset?: string
+    monthlyReset?: string
   }
 }
 
@@ -392,7 +420,7 @@ export interface SubscriptionStatus {
 
 export type UserTier = 'free_tier' | 'weekend_warrior' | 'master_tech'
 export type DocumentType = 'service_manual' | 'repair_manual' | 'owners_manual' | 'parts_catalog' | 'wiring_diagram' | 'other'
-export type DocumentStatus = 'uploaded' | 'processing' | 'processed' | 'failed'
-export type UsageType = 'ask' | 'document_upload' | 'tts' | 'stt'
+export type DocumentStatus = 'uploaded' | 'processing' | 'processed' | 'failed' | 'inactive'
+export type UsageType = 'ask' | 'document_upload' | 'audio_request'
 export type Platform = 'ios' | 'android' | 'web'
 export type SubscriptionTier = 'garage_visitor' | 'weekend_warrior' | 'master_tech'

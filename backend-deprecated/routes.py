@@ -72,6 +72,7 @@ async def ask(request: AskRequest, request_: Request):
 async def upload_document(
     file: UploadFile = File(...),
     user_id: str = None,
+    vehicle_id: Optional[str] = None,
     title: str = None,
     car_make: Optional[str] = None,
     car_model: Optional[str] = None,
@@ -107,6 +108,7 @@ async def upload_document(
         # Create upload request
         upload_request = DocumentUploadRequest(
             title=title or file.filename,
+            vehicle_id=vehicle_id,
             car_make=car_make,
             car_model=car_model,
             car_year=car_year,

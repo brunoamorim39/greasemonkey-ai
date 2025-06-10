@@ -265,17 +265,18 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
 
   const getTierDisplayName = (tier: string) => {
     switch (tier) {
-      case 'free': return 'Free'
-      case 'pro': return 'Pro'
-      case 'premium': return 'Premium'
+      case 'free_tier': return 'Free'
+      case 'weekend_warrior': return 'Weekend Warrior'
+      case 'master_tech': return 'Master Tech'
       default: return 'Free'
     }
   }
 
   const getTierIcon = (tier: string) => {
     switch (tier) {
-      case 'premium': return <Crown className="h-4 w-4 text-yellow-400" />
-      case 'pro': return <Zap className="h-4 w-4 text-blue-400" />
+      case 'free_tier': return <User className="h-4 w-4 text-zinc-400" />
+      case 'weekend_warrior': return <Zap className="h-4 w-4 text-blue-400" />
+      case 'master_tech': return <Crown className="h-4 w-4 text-yellow-400" />
       default: return <User className="h-4 w-4 text-zinc-400" />
     }
   }
@@ -309,8 +310,25 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
     }
   }
 
-  const currentTier = userStats?.tier || 'free'
-  const isFreeTier = currentTier === 'free'
+    // Don't render tier-specific content until userStats is loaded
+  if (!userStats) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-gray-500 to-gray-600 flex items-center justify-center">
+              <Settings className="h-5 w-5 text-white" />
+            </div>
+            Settings
+          </h1>
+          <p className="text-zinc-400 mt-1">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const currentTier = userStats?.tier || 'free_tier'
+  const isFreeTier = currentTier === 'free_tier'
 
   if (currentView === 'help-center') {
     return <HelpCenter onBack={() => setCurrentView('main')} />
@@ -353,24 +371,20 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
                 <User className="h-5 w-5 text-white" />
               </div>
               <div className="flex-1">
-                <p className="font-medium text-white">{user.email}</p>
-                <p className="text-sm text-zinc-400">Account Email</p>
+                <p className="font-medium text-white">
+                  {user.user_metadata?.full_name || userStats?.full_name || 'No name set'}
+                </p>
+                <p className="text-sm text-zinc-400">{user.email}</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-800">
+            <div className="pt-2 border-t border-zinc-800">
               <div>
                 <p className="text-sm text-zinc-400">Plan</p>
                 <div className="flex items-center gap-2 mt-1">
                   {getTierIcon(currentTier)}
                   <p className="font-medium text-white">{getTierDisplayName(currentTier)}</p>
                 </div>
-              </div>
-              <div>
-                <p className="text-sm text-zinc-400">Questions Used</p>
-                <p className="font-medium text-white mt-1">
-                  {userStats?.usage?.monthly?.ask_count || 0} this month
-                </p>
               </div>
             </div>
 
@@ -381,53 +395,9 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
             )}
           </div>
 
-          {/* Current Plan Status */}
-          {isFreeTier && (
-            <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-lg">
-              <div className="flex items-center gap-3">
-                {getTierIcon(currentTier)}
-                <div>
-                  <p className="font-medium text-white">{getTierDisplayName(currentTier)} Plan</p>
-                  <p className="text-sm text-zinc-400">Limited features</p>
-                </div>
-              </div>
-              <Button
-                onClick={onUpgrade}
-                size="sm"
-                className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
-              >
-                <ArrowUp className="h-4 w-4 mr-2" />
-                Upgrade
-              </Button>
-            </div>
-          )}
-
-          {/* Free Tier Upgrade Prompt */}
-          {isFreeTier && (
-            <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-500/20 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <Crown className="h-5 w-5 text-orange-400 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <h3 className="text-orange-400 font-medium mb-1">Unlock Premium Features</h3>
-                  <p className="text-sm text-zinc-400 mb-3">
-                    Get unlimited questions, voice responses, document uploads, and priority support.
-                  </p>
-                  <Button
-                    onClick={onUpgrade}
-                    size="sm"
-                    className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
-                  >
-                    <Crown className="h-4 w-4 mr-2" />
-                    View Plans
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Account Actions */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {onUpgrade && !isFreeTier && (
+            {onUpgrade && (
               <Button
                 variant="outline"
                 onClick={onUpgrade}
@@ -437,7 +407,7 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
                   <Crown className="h-4 w-4 text-orange-400" />
                   <div className="text-left">
                     <p className="font-medium">Manage Plan</p>
-                    <p className="text-sm text-zinc-400">Change or cancel subscription</p>
+                    <p className="text-sm text-zinc-400">{isFreeTier ? 'View upgrade options' : 'Change or cancel subscription'}</p>
                   </div>
                 </div>
               </Button>
@@ -586,7 +556,7 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
                   name="torque_unit"
                   value={unitPreferences.torque_unit || defaultUnitPreferences.torque_unit}
                   onChange={(e) => handleUnitPreferenceChange('torque_unit', e.target.value)}
-                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm"
+                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm appearance-none"
                 >
                   <option value="pound_feet">Pound Feet (lb-ft)</option>
                   <option value="newton_meters">Newton Meters (Nm)</option>
@@ -603,7 +573,7 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
                   name="pressure_unit"
                   value={unitPreferences.pressure_unit || defaultUnitPreferences.pressure_unit}
                   onChange={(e) => handleUnitPreferenceChange('pressure_unit', e.target.value)}
-                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm"
+                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm appearance-none"
                 >
                   <option value="psi">PSI (Pounds per square inch)</option>
                   <option value="bar">Bar</option>
@@ -621,7 +591,7 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
                   name="length_unit"
                   value={unitPreferences.length_unit || defaultUnitPreferences.length_unit}
                   onChange={(e) => handleUnitPreferenceChange('length_unit', e.target.value)}
-                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm"
+                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm appearance-none"
                 >
                   <option value="imperial">Imperial (inches, feet)</option>
                   <option value="metric">Metric (mm, cm, m)</option>
@@ -638,7 +608,7 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
                   name="temperature_unit"
                   value={unitPreferences.temperature_unit || defaultUnitPreferences.temperature_unit}
                   onChange={(e) => handleUnitPreferenceChange('temperature_unit', e.target.value)}
-                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm"
+                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm appearance-none"
                 >
                   <option value="fahrenheit">Fahrenheit (°F)</option>
                   <option value="celsius">Celsius (°C)</option>
@@ -655,7 +625,7 @@ export function SettingsPage({ userStats, onClearHistory, onSignOut, onUpgrade, 
                   name="socket_unit"
                   value={unitPreferences.socket_unit || defaultUnitPreferences.socket_unit}
                   onChange={(e) => handleUnitPreferenceChange('socket_unit', e.target.value)}
-                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm"
+                  className="block w-full rounded-md border-zinc-700 bg-zinc-800 py-2 px-3 text-white shadow-sm focus:border-orange-500 focus:outline-none focus:ring-orange-500 sm:text-sm appearance-none"
                 >
                   <option value="imperial">Imperial (SAE)</option>
                   <option value="metric">Metric (mm)</option>

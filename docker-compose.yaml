@@ -28,7 +28,7 @@ services:
       - /app/.next/cache
     restart: unless-stopped
 
-  # Stripe CLI for webhook forwarding (development only)
+    # Stripe CLI for webhook forwarding (development only)
   stripe:
     image: stripe/stripe-cli:latest
     container_name: greasemonkey-stripe
@@ -36,6 +36,7 @@ services:
       - ./pwa/.env
     environment:
       - STRIPE_DEVICE_NAME=greasemonkey-docker
+      - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
     command:
       - listen
       - --forward-to
@@ -44,6 +45,8 @@ services:
     depends_on:
       - pwa
     restart: unless-stopped
+    volumes:
+      - stripe_config:/root/.config/stripe
 
   # PWA Production service (for testing production builds)
   pwa-prod:
@@ -64,3 +67,6 @@ services:
 networks:
   default:
     name: greasemonkey-net
+
+volumes:
+  stripe_config:

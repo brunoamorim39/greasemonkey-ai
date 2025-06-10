@@ -119,7 +119,7 @@ status: ## Show service status
 
 logs: ## View PWA logs
 	@echo "📊 PWA logs (Ctrl+C to exit)..."
-	$(DOCKER_COMPOSE) logs -f pwa
+	$(DOCKER_COMPOSE) logs -f pwa stripe
 
 # Setup & Maintenance
 install: ## Install dependencies

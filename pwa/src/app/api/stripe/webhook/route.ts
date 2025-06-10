@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-12-18.acacia',
+  apiVersion: '2025-02-24.acacia',
 })
 
 const supabase = createClient(
@@ -17,12 +17,20 @@ export async function POST(request: NextRequest) {
   const body = await request.text()
   const signature = request.headers.get('stripe-signature')!
 
+  console.log('🔍 Webhook received:', {
+    hasBody: !!body,
+    hasSignature: !!signature,
+    hasWebhookSecret: !!webhookSecret,
+    bodyLength: body.length
+  })
+
   let event: Stripe.Event
 
   try {
     event = stripe.webhooks.constructEvent(body, signature, webhookSecret)
+    console.log('✅ Webhook signature verified, event type:', event.type)
   } catch (err) {
-    console.error('Webhook signature verification failed:', err)
+    console.error('❌ Webhook signature verification failed:', err)
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
@@ -100,20 +108,15 @@ async function handleSubscriptionCancelled(subscription: Stripe.Subscription) {
     .single()
 
   if (user) {
-    // Update user_profiles
+    // Update user_profiles (single source of truth)
     await supabase
       .from('user_profiles')
       .update({
         subscription_status: 'cancelled',
-        subscription_end_date: new Date(subscription.current_period_end * 1000).toISOString()
+        subscription_end_date: new Date(subscription.current_period_end * 1000).toISOString(),
+        tier: 'free_tier'
       })
       .eq('id', user.id)
-
-    // Update user_tiers
-    await supabase
-      .from('user_tiers')
-      .update({ tier: 'free_tier' })
-      .eq('user_id', user.id)
   }
 }
 
@@ -131,43 +134,45 @@ async function handleSetupIntentSucceeded(setupIntent: Stripe.SetupIntent) {
 }
 
 async function updateUserSubscription(userId: string, subscription: Stripe.Subscription, planId: string) {
+  const tier = planId === 'master_tech' ? 'master_tech' : 'weekend_warrior'
+
   const profileUpdates = {
     subscription_status: subscription.status,
     subscription_id: subscription.id,
     subscription_start_date: new Date(subscription.current_period_start * 1000).toISOString(),
     subscription_end_date: new Date(subscription.current_period_end * 1000).toISOString(),
     stripe_customer_id: subscription.customer as string,
+    tier,
   }
 
-  // Update user_profiles
+  // Update user_profiles (single source of truth)
   await supabase
     .from('user_profiles')
     .update(profileUpdates)
     .eq('id', userId)
-
-  // Update user_tiers
-  const tier = planId === 'master_tech' ? 'master_tech' : 'weekend_warrior'
-  await supabase
-    .from('user_tiers')
-    .update({ tier })
-    .eq('user_id', userId)
 }
 
 async function updateUserPaymentMethod(userId: string, setupIntent: Stripe.SetupIntent, planId: string) {
+  console.log('🔧 Updating user payment method:', { userId, planId, setupIntentId: setupIntent.id })
+
   const profileUpdates = {
     stripe_customer_id: setupIntent.customer as string,
     stripe_payment_method_id: setupIntent.payment_method as string,
+    tier: planId,
   }
 
-  // Update user_profiles
-  await supabase
+  console.log('📝 Profile updates:', profileUpdates)
+
+  // Update user_profiles (single source of truth)
+  const { data: profileData, error: profileError } = await supabase
     .from('user_profiles')
     .update(profileUpdates)
     .eq('id', userId)
+    .select()
 
-  // Update user_tiers
-  await supabase
-    .from('user_tiers')
-    .update({ tier: planId })
-    .eq('user_id', userId)
+  if (profileError) {
+    console.error('❌ Error updating user_profiles:', profileError)
+  } else {
+    console.log('✅ user_profiles updated:', profileData)
+  }
 }

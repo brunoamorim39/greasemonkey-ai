@@ -51,11 +51,8 @@ CREATE TABLE public.documents (
   original_filename text NOT NULL,
   category text NOT NULL CHECK (category IN (
     'service_manual',
-    'owner_manual',
+    'owners_manual',
     'maintenance_record',
-    'parts_diagram',
-    'photo',
-    'video',
     'other'
   )),
   description text,

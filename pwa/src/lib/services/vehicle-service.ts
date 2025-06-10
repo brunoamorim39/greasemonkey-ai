@@ -36,23 +36,58 @@ export interface UpdateVehicleRequest {
 }
 
 export class VehicleService {
-  async getUserVehicles(userId: string): Promise<Vehicle[]> {
+  async getUserVehicles(userId: string, includeInactive: boolean = false): Promise<Vehicle[]> {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('vehicles')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false })
+        .order('last_used_at', { ascending: false, nullsFirst: false })
+
+      if (!includeInactive) {
+        query = query.eq('is_active', true)
+        console.log('🚗 Filtering vehicles to only show active ones')
+      } else {
+        console.log('🚗 Loading ALL vehicles (including inactive)')
+      }
+
+      const { data, error } = await query
 
       if (error) {
-        console.error('Error fetching user vehicles:', error)
-        return []
+        console.error('Error fetching vehicles:', error)
+        throw error
+      }
+
+      console.log(`🚗 Loaded ${data?.length || 0} vehicles for user ${userId} (includeInactive: ${includeInactive})`)
+      if (data && data.length > 0) {
+        console.log('🚗 Vehicle is_active values:', data.map(v => ({ id: v.id, make: v.make, model: v.model, is_active: v.is_active })))
       }
 
       return data || []
     } catch (error) {
       console.error('Error in getUserVehicles:', error)
-      return []
+      throw error
+    }
+  }
+
+  async getInactiveVehicles(userId: string): Promise<Vehicle[]> {
+    try {
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_active', false)
+        .order('deactivated_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching inactive vehicles:', error)
+        throw error
+      }
+
+      return data || []
+    } catch (error) {
+      console.error('Error in getInactiveVehicles:', error)
+      throw error
     }
   }
 
@@ -136,11 +171,33 @@ export class VehicleService {
 
   async deleteVehicle(userId: string, vehicleId: string): Promise<boolean> {
     try {
+      // First, delete all documents associated with this vehicle
+      const { data: documents } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('vehicle_id', vehicleId)
+
+      if (documents && documents.length > 0) {
+        // Delete document files from storage
+        for (const doc of documents) {
+          await this.deleteDocumentFile(userId, doc.id)
+        }
+
+        // Delete document records
+        await supabase
+          .from('documents')
+          .delete()
+          .eq('user_id', userId)
+          .eq('vehicle_id', vehicleId)
+      }
+
+      // Delete the vehicle
       const { error } = await supabase
         .from('vehicles')
         .delete()
-        .eq('user_id', userId)
         .eq('id', vehicleId)
+        .eq('user_id', userId)
 
       if (error) {
         console.error('Error deleting vehicle:', error)
@@ -151,6 +208,27 @@ export class VehicleService {
     } catch (error) {
       console.error('Error in deleteVehicle:', error)
       return false
+    }
+  }
+
+  private async deleteDocumentFile(userId: string, documentId: string): Promise<void> {
+    try {
+      // Get document storage path
+      const { data: doc } = await supabase
+        .from('documents')
+        .select('storage_path')
+        .eq('id', documentId)
+        .eq('user_id', userId)
+        .single()
+
+      if (doc?.storage_path) {
+        // Delete file from storage
+        await supabase.storage
+          .from('documents')
+          .remove([doc.storage_path])
+      }
+    } catch (error) {
+      console.error('Error deleting document file:', error)
     }
   }
 
@@ -243,6 +321,39 @@ export class VehicleService {
     if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(cleanVIN)) return false
 
     return true
+  }
+
+  async reactivateVehicle(userId: string, vehicleId: string): Promise<Vehicle | null> {
+    try {
+      // Check if user can add this vehicle back
+      const canAdd = await this.canAddVehicle(userId)
+      if (!canAdd.allowed) {
+        throw new Error(canAdd.reason || 'Cannot reactivate vehicle')
+      }
+
+      const { data, error } = await supabase
+        .from('vehicles')
+        .update({
+          is_active: true,
+          deactivated_at: null,
+          deactivation_reason: null,
+          last_used_at: new Date().toISOString()
+        })
+        .eq('id', vehicleId)
+        .eq('user_id', userId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Error reactivating vehicle:', error)
+        throw error
+      }
+
+      return data
+    } catch (error) {
+      console.error('Error in reactivateVehicle:', error)
+      throw error
+    }
   }
 }
 

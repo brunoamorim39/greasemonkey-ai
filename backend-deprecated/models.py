@@ -194,6 +194,7 @@ class DocumentStatus(str, Enum):
 class DocumentMetadata(BaseModel):
     id: Optional[str] = None
     user_id: Optional[str] = None  # None for system documents
+    vehicle_id: Optional[str] = None  # Associate with specific vehicle
     title: str
     filename: str
     document_type: DocumentType
@@ -213,6 +214,7 @@ class DocumentMetadata(BaseModel):
 
 class DocumentUploadRequest(BaseModel):
     title: str
+    vehicle_id: Optional[str] = None  # Associate with specific vehicle
     car_make: Optional[str] = None
     car_model: Optional[str] = None
     car_year: Optional[int] = None
